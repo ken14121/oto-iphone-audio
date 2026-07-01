@@ -1,0 +1,10 @@
+.git
+.agents
+.codex
+__pycache__
+downloads
+tools
+*.pyc
+*.bat
+*.ps1
+test_app.py

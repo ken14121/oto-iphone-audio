@@ -1,0 +1,19 @@
+{
+  "name": "OTO — オフライン音楽",
+  "short_name": "OTO",
+  "description": "MP3を端末に保存して、オフラインでも聴ける音楽プレーヤー",
+  "lang": "ja",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f1eee6",
+  "theme_color": "#191b1a",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

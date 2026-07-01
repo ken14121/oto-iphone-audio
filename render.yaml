@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: oto-iphone-audio
+    runtime: docker
+    plan: free
+    region: singapore
+    healthCheckPath: /api/config
+    autoDeployTrigger: commit
+    envVars:
+      - key: AUDIO_TOOL_ACCESS_CODE
+        sync: false
+      - key: AUDIO_TOOL_HOST
+        value: 0.0.0.0
+      - key: AUDIO_TOOL_DELETE_AFTER_DOWNLOAD
+        value: "1"

@@ -1,0 +1,325 @@
+from __future__ import annotations
+
+import json
+import hmac
+import mimetypes
+import os
+import re
+import shutil
+import subprocess
+import threading
+import time
+import uuid
+import webbrowser
+from http import HTTPStatus
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from urllib.parse import parse_qs, quote, unquote, urlparse
+
+
+ROOT = Path(__file__).resolve().parent
+WEB_DIR = ROOT / "web"
+TOOLS_DIR = ROOT / "tools"
+DOWNLOAD_DIR = ROOT / "downloads"
+HOST = os.environ.get("AUDIO_TOOL_HOST", "127.0.0.1")
+PORT = int(os.environ.get("AUDIO_TOOL_PORT") or os.environ.get("PORT", "8765"))
+MOCK_MODE = os.environ.get("AUDIO_TOOL_MOCK") == "1"
+ACCESS_CODE = os.environ.get("AUDIO_TOOL_ACCESS_CODE", "").strip()
+DELETE_AFTER_DOWNLOAD = os.environ.get("AUDIO_TOOL_DELETE_AFTER_DOWNLOAD") == "1"
+
+JOBS: dict[str, dict] = {}
+JOBS_LOCK = threading.Lock()
+
+STATIC_FILES = {
+    "/": "index.html",
+    "/index.html": "index.html",
+    "/app.js": "app.js",
+    "/styles.css": "styles.css",
+    "/manifest.webmanifest": "manifest.webmanifest",
+    "/service-worker.js": "service-worker.js",
+    "/icon.svg": "icon.svg",
+}
+
+
+def is_youtube_url(value: str) -> bool:
+    try:
+        parsed = urlparse(value.strip())
+    except ValueError:
+        return False
+    if parsed.scheme not in {"http", "https"}:
+        return False
+    host = (parsed.hostname or "").lower().rstrip(".")
+    valid_host = host == "youtu.be" or host == "youtube.com" or host.endswith(".youtube.com")
+    return valid_host and bool(parsed.path)
+
+
+def public_job(job: dict) -> dict:
+    return {key: value for key, value in job.items() if key != "output_path"}
+
+
+def update_job(job_id: str, **changes) -> None:
+    with JOBS_LOCK:
+        JOBS[job_id].update(changes)
+
+
+def find_tool(name: str) -> Path | None:
+    local_names = [f"{name}.exe", name] if os.name == "nt" else [name, f"{name}.exe"]
+    for local_name in local_names:
+        candidate = TOOLS_DIR / local_name
+        if candidate.exists():
+            return candidate
+    system_path = shutil.which(name)
+    return Path(system_path) if system_path else None
+
+
+def run_mock_job(job_id: str) -> None:
+    for progress in (8, 24, 47, 71, 92):
+        time.sleep(0.08)
+        update_job(job_id, progress=progress, message="音声を変換しています…")
+    DOWNLOAD_DIR.mkdir(exist_ok=True)
+    mock_path = DOWNLOAD_DIR / "サンプル音声 [mock].mp3"
+    mock_path.write_bytes(b"ID3-mock-audio")
+    update_job(
+        job_id,
+        state="complete",
+        progress=100,
+        message="変換が完了しました",
+        filename=mock_path.name,
+        output_path=str(mock_path.resolve()),
+    )
+
+
+def run_download(job_id: str, url: str, quality: str) -> None:
+    if MOCK_MODE:
+        run_mock_job(job_id)
+        return
+
+    yt_dlp = find_tool("yt-dlp")
+    ffmpeg = find_tool("ffmpeg")
+    deno = find_tool("deno")
+    if not yt_dlp or not ffmpeg or not deno:
+        update_job(
+            job_id,
+            state="error",
+            message="変換エンジンが見つかりません。start.ps1 から起動し直してください。",
+        )
+        return
+
+    quality_map = {"best": "0", "high": "2", "standard": "5"}
+    DOWNLOAD_DIR.mkdir(exist_ok=True)
+    output_template = str(DOWNLOAD_DIR / "%(title).180B [%(id)s].%(ext)s")
+    command = [
+        str(yt_dlp),
+        "--ignore-config",
+        "--no-playlist",
+        "--newline",
+        "--windows-filenames",
+        "--js-runtimes",
+        f"deno:{deno}",
+        "--extract-audio",
+        "--audio-format",
+        "mp3",
+        "--audio-quality",
+        quality_map.get(quality, "2"),
+        "--embed-metadata",
+        "--ffmpeg-location",
+        str(ffmpeg.parent),
+        "--output",
+        output_template,
+        "--print",
+        "after_move:__OUTPUT__:%(filepath)s",
+        url,
+    ]
+
+    try:
+        process = subprocess.Popen(
+            command,
+            cwd=ROOT,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+        output_path: Path | None = None
+        assert process.stdout is not None
+        for raw_line in process.stdout:
+            line = raw_line.strip()
+            progress_match = re.search(r"\[download\]\s+([\d.]+)%", line)
+            if progress_match:
+                progress = min(90, int(float(progress_match.group(1)) * 0.9))
+                update_job(job_id, progress=progress, message="動画から音声を取得しています…")
+            elif line.startswith("[ExtractAudio]"):
+                update_job(job_id, progress=94, message="MP3に変換しています…")
+            elif line.startswith("__OUTPUT__:"):
+                output_path = Path(line.removeprefix("__OUTPUT__:").strip())
+
+        if process.wait() != 0:
+            raise RuntimeError("音声を取得できませんでした。URLや動画の公開状態を確認してください。")
+
+        if output_path is None or not output_path.exists():
+            candidates = sorted(DOWNLOAD_DIR.glob("*.mp3"), key=lambda p: p.stat().st_mtime, reverse=True)
+            output_path = candidates[0] if candidates else None
+        if output_path is None:
+            raise RuntimeError("変換後のMP3ファイルを確認できませんでした。")
+
+        update_job(
+            job_id,
+            state="complete",
+            progress=100,
+            message="変換が完了しました",
+            filename=output_path.name,
+            output_path=str(output_path.resolve()),
+        )
+    except Exception as exc:
+        update_job(job_id, state="error", message=str(exc))
+
+
+class Handler(BaseHTTPRequestHandler):
+    server_version = "OfflineAudioPWA/2.0"
+
+    def log_message(self, format: str, *args) -> None:
+        return
+
+    def send_json(self, payload: dict, status: int = HTTPStatus.OK) -> None:
+        data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.end_headers()
+        self.wfile.write(data)
+
+    def send_static(self, path: Path) -> None:
+        if not path.exists() or not path.is_file():
+            self.send_error(HTTPStatus.NOT_FOUND)
+            return
+        data = path.read_bytes()
+        content_type = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+        if path.suffix == ".webmanifest":
+            content_type = "application/manifest+json"
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Content-Type", f"{content_type}; charset=utf-8")
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("X-Content-Type-Options", "nosniff")
+        if path.name == "service-worker.js":
+            self.send_header("Cache-Control", "no-cache")
+            self.send_header("Service-Worker-Allowed", "/")
+        self.end_headers()
+        self.wfile.write(data)
+
+    def is_authorized(self) -> bool:
+        if not ACCESS_CODE:
+            return True
+        query_code = parse_qs(urlparse(self.path).query).get("code", [""])[0]
+        supplied = self.headers.get("X-Access-Code", "") or query_code
+        return hmac.compare_digest(supplied, ACCESS_CODE)
+
+    def require_authorization(self) -> bool:
+        if self.is_authorized():
+            return True
+        self.send_json({"error": "アクセスコードが正しくありません"}, HTTPStatus.UNAUTHORIZED)
+        return False
+
+    def do_GET(self) -> None:
+        path = unquote(urlparse(self.path).path)
+        if path in STATIC_FILES:
+            self.send_static(WEB_DIR / STATIC_FILES[path])
+            return
+        if path == "/api/config":
+            self.send_json({"requiresAccessCode": bool(ACCESS_CODE)})
+            return
+        if path.startswith("/api/jobs/"):
+            if not self.require_authorization():
+                return
+            job_id = path.rsplit("/", 1)[-1]
+            with JOBS_LOCK:
+                job = JOBS.get(job_id)
+                payload = public_job(job) if job else None
+            if payload is None:
+                self.send_json({"error": "ジョブが見つかりません"}, HTTPStatus.NOT_FOUND)
+            else:
+                self.send_json(payload)
+            return
+        if path.startswith("/files/"):
+            if not self.require_authorization():
+                return
+            filename = Path(path.removeprefix("/files/")).name
+            file_path = (DOWNLOAD_DIR / filename).resolve()
+            if file_path.parent != DOWNLOAD_DIR.resolve() or not file_path.exists():
+                self.send_error(HTTPStatus.NOT_FOUND)
+                return
+            file_size = file_path.stat().st_size
+            self.send_response(HTTPStatus.OK)
+            self.send_header("Content-Type", "audio/mpeg")
+            self.send_header("Content-Disposition", f"attachment; filename*=UTF-8''{quote(filename, safe='')}")
+            self.send_header("Content-Length", str(file_size))
+            self.send_header("X-Content-Type-Options", "nosniff")
+            self.end_headers()
+            try:
+                with file_path.open("rb") as source:
+                    shutil.copyfileobj(source, self.wfile, length=1024 * 1024)
+            finally:
+                if DELETE_AFTER_DOWNLOAD:
+                    file_path.unlink(missing_ok=True)
+            return
+        self.send_error(HTTPStatus.NOT_FOUND)
+
+    def do_POST(self) -> None:
+        if urlparse(self.path).path != "/api/jobs":
+            self.send_error(HTTPStatus.NOT_FOUND)
+            return
+        if not self.require_authorization():
+            return
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+            if length > 16_384:
+                raise ValueError("リクエストが大きすぎます")
+            payload = json.loads(self.rfile.read(length).decode("utf-8"))
+            url = str(payload.get("url", "")).strip()
+            quality = str(payload.get("quality", "high"))
+            rights_confirmed = payload.get("rightsConfirmed") is True
+        except (ValueError, json.JSONDecodeError):
+            self.send_json({"error": "入力内容を読み取れませんでした"}, HTTPStatus.BAD_REQUEST)
+            return
+
+        if not is_youtube_url(url):
+            self.send_json({"error": "有効なYouTube URLを入力してください"}, HTTPStatus.BAD_REQUEST)
+            return
+        if not rights_confirmed:
+            self.send_json({"error": "動画を変換する権利の確認が必要です"}, HTTPStatus.BAD_REQUEST)
+            return
+        if quality not in {"best", "high", "standard"}:
+            self.send_json({"error": "音質の指定が正しくありません"}, HTTPStatus.BAD_REQUEST)
+            return
+
+        job_id = uuid.uuid4().hex
+        job = {"id": job_id, "state": "working", "progress": 2, "message": "準備しています…"}
+        with JOBS_LOCK:
+            JOBS[job_id] = job
+        threading.Thread(target=run_download, args=(job_id, url, quality), daemon=True).start()
+        self.send_json(public_job(job), HTTPStatus.ACCEPTED)
+
+
+def main() -> None:
+    DOWNLOAD_DIR.mkdir(exist_ok=True)
+    server = ThreadingHTTPServer((HOST, PORT), Handler)
+    browser_url = f"http://127.0.0.1:{PORT}"
+    if ACCESS_CODE:
+        browser_url += f"/?code={quote(ACCESS_CODE)}"
+    public_url = os.environ.get("RENDER_EXTERNAL_URL")
+    print(f"OTO web app: {public_url or f'http://{HOST}:{PORT}'}", flush=True)
+    if os.environ.get("AUDIO_TOOL_NO_BROWSER") != "1":
+        threading.Timer(0.6, lambda: webbrowser.open(browser_url)).start()
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        server.server_close()
+
+
+if __name__ == "__main__":
+    main()

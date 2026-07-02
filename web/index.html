@@ -3,7 +3,8 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <meta name="theme-color" content="#191b1a" />
+    <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="OTO" />
@@ -13,63 +14,169 @@
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
-    <header class="topbar">
-      <a class="brand" href="#top" aria-label="OTO ホーム"><span>O</span>TO</a>
-      <div class="offline-badge" id="network-badge"><i></i><span>オンライン</span></div>
-    </header>
+    <svg hidden aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
+      <symbol id="icon-download" viewBox="0 0 24 24">
+        <path d="M12 3.5v10.5M7 10l5 5 5-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+        <path d="M5 20h14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+      </symbol>
+      <symbol id="icon-playlist" viewBox="0 0 24 24">
+        <path d="M4 6h9M4 11h9M4 16h5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+        <circle cx="16.5" cy="17" r="2.6" fill="currentColor" />
+        <path d="M19.1 17V7.2l3-0.8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+      </symbol>
+      <symbol id="icon-note" viewBox="0 0 24 24">
+        <circle cx="9.4" cy="17" r="2.9" fill="currentColor" />
+        <path d="M12.3 17V5.6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+        <path d="M12.3 5.6c3 .4 4.8 1.9 5.2 4.4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+      </symbol>
+      <symbol id="icon-chevron" viewBox="0 0 12 20">
+        <path d="M2.5 2.5L10 10l-7.5 7.5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" />
+      </symbol>
+      <symbol id="icon-back" viewBox="0 0 12 20">
+        <path d="M9.5 2.5L2 10l7.5 7.5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" />
+      </symbol>
+      <symbol id="icon-play" viewBox="0 0 24 24">
+        <path d="M8 5.6v12.8c0 .9 1 1.4 1.7 1l10.2-6.4c.7-.5.7-1.5 0-2L9.7 4.6c-.7-.4-1.7.1-1.7 1z" fill="currentColor" />
+      </symbol>
+      <symbol id="icon-pause" viewBox="0 0 24 24">
+        <rect x="6.5" y="4.5" width="4.2" height="15" rx="1.2" fill="currentColor" />
+        <rect x="13.3" y="4.5" width="4.2" height="15" rx="1.2" fill="currentColor" />
+      </symbol>
+      <symbol id="icon-next" viewBox="0 0 24 24">
+        <path d="M4.5 6.6v10.8c0 .9 1 1.4 1.7 1l8.1-5.4c.7-.5.7-1.5 0-2L6.2 5.6c-.7-.4-1.7.1-1.7 1z" fill="currentColor" />
+        <rect x="16.6" y="5.5" width="2.9" height="13" rx="1.2" fill="currentColor" />
+      </symbol>
+      <symbol id="icon-prev" viewBox="0 0 24 24">
+        <path d="M19.5 6.6v10.8c0 .9-1 1.4-1.7 1l-8.1-5.4c-.7-.5-.7-1.5 0-2l8.1-5.4c.7-.4 1.7.1 1.7 1z" fill="currentColor" />
+        <rect x="4.5" y="5.5" width="2.9" height="13" rx="1.2" fill="currentColor" />
+      </symbol>
+      <symbol id="icon-shuffle" viewBox="0 0 24 24">
+        <path d="M3 7h3.8l10 10H21M3 17h3.8m6.4-6.6L16.8 7H21" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+        <path d="M18.6 4.4L21.2 7l-2.6 2.6M18.6 14.4L21.2 17l-2.6 2.6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+      </symbol>
+      <symbol id="icon-more" viewBox="0 0 24 24">
+        <circle cx="5" cy="12" r="2" fill="currentColor" />
+        <circle cx="12" cy="12" r="2" fill="currentColor" />
+        <circle cx="19" cy="12" r="2" fill="currentColor" />
+      </symbol>
+      <symbol id="icon-plus" viewBox="0 0 24 24">
+        <path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" />
+      </symbol>
+    </svg>
 
-    <main id="top" class="shell">
-      <section class="hero">
-        <p class="eyebrow">YOUR MUSIC, ALWAYS WITH YOU</p>
-        <h1>音を、<br /><em>連れていく。</em></h1>
-        <p class="lead">好きな音声をこの端末に保存。通信がない場所でも、画面を閉じても、あなたのペースで聴けます。</p>
-        <div class="hero-actions">
-          <button class="primary" id="pick-files" type="button">MP3を追加 <span>＋</span></button>
-          <button class="secondary" id="install-app" type="button" hidden>アプリとして追加</button>
-          <input id="file-input" type="file" accept="audio/mpeg,audio/mp3,.mp3" multiple hidden />
-        </div>
+    <main class="app">
+      <!-- ライブラリ（ルート） -->
+      <section class="page" data-route="library">
+        <header class="navbar">
+          <span class="navbar-spacer"></span>
+          <div class="offline-badge" id="network-badge"><i></i><span>オンライン</span></div>
+        </header>
+        <h1 class="large-title">ライブラリ</h1>
+        <nav class="menu-list" aria-label="ライブラリメニュー">
+          <a class="menu-row" href="#/download">
+            <span class="menu-icon"><svg><use href="#icon-download" /></svg></span>
+            <span class="menu-label">MP3ダウンロード</span>
+            <svg class="chevron"><use href="#icon-chevron" /></svg>
+          </a>
+          <a class="menu-row" href="#/playlists">
+            <span class="menu-icon"><svg><use href="#icon-playlist" /></svg></span>
+            <span class="menu-label">プレイリスト</span>
+            <span class="menu-count" id="playlists-count"></span>
+            <svg class="chevron"><use href="#icon-chevron" /></svg>
+          </a>
+          <a class="menu-row" href="#/songs">
+            <span class="menu-icon"><svg><use href="#icon-note" /></svg></span>
+            <span class="menu-label">曲</span>
+            <span class="menu-count" id="songs-count"></span>
+            <svg class="chevron"><use href="#icon-chevron" /></svg>
+          </a>
+        </nav>
+        <button class="install-banner" id="install-app" type="button" hidden>アプリとしてホーム画面に追加</button>
+        <section id="recent-section" hidden>
+          <h2 class="section-title">最近追加した項目</h2>
+          <div class="recent-grid" id="recent-grid"></div>
+        </section>
       </section>
 
-      <section class="library-section" aria-labelledby="library-title">
-        <div class="section-heading">
-          <div>
-            <p class="section-number">01 / LIBRARY</p>
-            <h2 id="library-title">オフラインライブラリ</h2>
-          </div>
-          <p id="library-summary">0曲・0 MB</p>
+      <!-- 曲 -->
+      <section class="page" data-route="songs">
+        <header class="navbar">
+          <a class="back" href="#/"><svg><use href="#icon-back" /></svg>ライブラリ</a>
+          <button class="nav-action" id="import-songs" type="button" aria-label="MP3ファイルを追加"><svg><use href="#icon-plus" /></svg></button>
+        </header>
+        <h1 class="large-title">曲</h1>
+        <div class="play-actions" id="songs-actions" hidden>
+          <button id="play-all" type="button"><svg><use href="#icon-play" /></svg>再生</button>
+          <button id="shuffle-all" type="button"><svg><use href="#icon-shuffle" /></svg>シャッフル</button>
         </div>
-
-        <div id="empty-library" class="empty-state">
-          <div class="record" aria-hidden="true"><span></span></div>
-          <h3>まだ、まっさらです。</h3>
-          <p>手元のMP3を追加するか、下の変換ツールから保存してください。</p>
-          <button class="text-button" id="empty-pick" type="button">MP3を選ぶ →</button>
+        <div class="empty-state" id="songs-empty" hidden>
+          <div class="empty-art" aria-hidden="true"><svg><use href="#icon-note" /></svg></div>
+          <h3>曲がありません</h3>
+          <p>手元のMP3ファイルを追加するか、MP3ダウンロードから保存してください。</p>
+          <button class="pill-button" id="empty-import" type="button">MP3ファイルを追加</button>
+          <a class="text-link" href="#/download">MP3ダウンロードへ</a>
         </div>
-
-        <ol id="track-list" class="track-list" aria-label="保存済みの曲" hidden></ol>
+        <ul class="track-list" id="song-list"></ul>
       </section>
 
-      <section class="converter" aria-labelledby="converter-title">
-        <div class="converter-copy">
-          <p class="section-number light">02 / IMPORT</p>
-          <h2 id="converter-title">動画の音声も、<br />ここへ。</h2>
-          <p>自分で作った動画など、変換・保存する権利があるYouTube動画をMP3にして、この端末へ保存できます。</p>
+      <!-- プレイリスト一覧 -->
+      <section class="page" data-route="playlists">
+        <header class="navbar">
+          <a class="back" href="#/"><svg><use href="#icon-back" /></svg>ライブラリ</a>
+        </header>
+        <h1 class="large-title">プレイリスト</h1>
+        <div class="menu-list">
+          <button class="menu-row new-playlist" id="new-playlist" type="button">
+            <span class="menu-icon"><svg><use href="#icon-plus" /></svg></span>
+            <span class="menu-label">新規プレイリスト…</span>
+          </button>
         </div>
+        <p class="empty-hint" id="playlists-empty" hidden>プレイリストを作ると、好きな曲を好きな順番でまとめて再生できます。</p>
+        <ul class="playlist-list" id="playlist-list"></ul>
+      </section>
 
-        <form id="convert-form" class="convert-form">
-          <div id="access-panel" class="access-panel" hidden>
-            <label for="access-code">設定した6桁のアクセスコード</label>
+      <!-- プレイリスト詳細 -->
+      <section class="page" data-route="playlist">
+        <header class="navbar">
+          <a class="back" href="#/playlists"><svg><use href="#icon-back" /></svg>プレイリスト</a>
+          <button class="nav-action" id="playlist-options" type="button" aria-label="プレイリストの操作"><svg><use href="#icon-more" /></svg></button>
+        </header>
+        <h1 class="large-title" id="playlist-title">プレイリスト</h1>
+        <p class="page-meta" id="playlist-meta">0曲</p>
+        <div class="play-actions" id="playlist-actions" hidden>
+          <button id="playlist-play" type="button"><svg><use href="#icon-play" /></svg>再生</button>
+          <button id="playlist-shuffle" type="button"><svg><use href="#icon-shuffle" /></svg>シャッフル</button>
+        </div>
+        <div class="empty-state" id="playlist-empty" hidden>
+          <div class="empty-art" aria-hidden="true"><svg><use href="#icon-playlist" /></svg></div>
+          <h3>まだ曲がありません</h3>
+          <p>「曲」ページで曲の「…」から、このプレイリストに追加できます。</p>
+          <a class="text-link" href="#/songs">曲ページへ</a>
+        </div>
+        <ul class="track-list" id="playlist-track-list"></ul>
+      </section>
+
+      <!-- MP3ダウンロード -->
+      <section class="page" data-route="download">
+        <header class="navbar">
+          <a class="back" href="#/"><svg><use href="#icon-back" /></svg>ライブラリ</a>
+        </header>
+        <h1 class="large-title">MP3ダウンロード</h1>
+        <p class="page-meta">権利を持つYouTube動画をMP3にして、この端末のライブラリへ保存します。</p>
+
+        <form id="convert-form" class="card">
+          <div id="access-panel" class="form-block" hidden>
+            <label class="field-label" for="access-code">6桁のアクセスコード</label>
             <input id="access-code" type="text" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code" placeholder="000000" />
           </div>
 
-          <label for="url">YouTube URL</label>
-          <div class="url-row">
-            <span aria-hidden="true">▶</span>
+          <div class="form-block">
+            <label class="field-label" for="url">YouTube URL</label>
             <input id="url" name="url" type="url" placeholder="https://youtu.be/..." autocomplete="url" required />
           </div>
 
-          <fieldset>
-            <legend>音質</legend>
+          <fieldset class="form-block">
+            <legend class="field-label">音質</legend>
             <div class="quality-options">
               <label><input type="radio" name="quality" value="best" /><span>最高</span></label>
               <label><input type="radio" name="quality" value="high" checked /><span>高音質</span></label>
@@ -82,45 +189,78 @@
             <span>この動画を変換・利用する権利を持っています</span>
           </label>
 
-          <button id="submit" class="convert-button" type="submit"><span>MP3にして保存</span><b>↗</b></button>
+          <button id="submit" class="convert-button" type="submit">MP3にして保存</button>
 
           <section id="status" class="status" aria-live="polite" hidden>
             <div class="status-line"><strong id="status-message">準備しています…</strong><span id="status-percent">0%</span></div>
             <div class="progress-track"><div id="progress" class="progress"></div></div>
           </section>
         </form>
-      </section>
 
-      <section class="tips" aria-labelledby="tips-title">
-        <p class="section-number">03 / HOW TO USE</p>
-        <h2 id="tips-title">スマホで使うなら</h2>
-        <div class="tip-grid">
-          <article><span>1</span><h3>ホーム画面へ追加</h3><p>ブラウザの共有・メニューから追加すると、普通のアプリのように開けます。</p></article>
-          <article><span>2</span><h3>曲を端末へ保存</h3><p>一度保存した曲は、このアプリの専用領域からオフラインで再生します。</p></article>
-          <article><span>3</span><h3>そのまま画面を移動</h3><p>再生中は別タブや別アプリに移っても、OSの再生パネルから操作できます。</p></article>
-        </div>
+        <section class="card">
+          <h2 class="card-title">手元のMP3を追加</h2>
+          <p class="card-text">この端末にあるMP3ファイルを選んで、ライブラリへ保存します。</p>
+          <button class="pill-button" id="pick-files" type="button">ファイルを選ぶ</button>
+        </section>
       </section>
     </main>
 
-    <aside id="toast" class="toast" role="status" aria-live="polite" hidden></aside>
+    <input id="file-input" type="file" accept="audio/mpeg,audio/mp3,.mp3" multiple hidden />
 
-    <section id="player" class="player" aria-label="音楽プレーヤー" hidden>
-      <div class="player-meta">
-        <div class="mini-art" aria-hidden="true">♪</div>
-        <div><strong id="player-title">曲名</strong><span id="player-state">オフライン保存済み</span></div>
+    <!-- ミニプレーヤー -->
+    <div class="mini-player" id="mini-player" hidden>
+      <button class="mini-main" id="mini-open" type="button" aria-label="再生画面を開く">
+        <span class="mini-art" id="mini-art" aria-hidden="true">♪</span>
+        <span class="mini-title" id="mini-title">曲名</span>
+      </button>
+      <button class="mini-control" id="mini-play" type="button" aria-label="再生 / 一時停止">
+        <svg class="icon-play-state icon-play"><use href="#icon-play" /></svg>
+        <svg class="icon-play-state icon-pause"><use href="#icon-pause" /></svg>
+      </button>
+      <button class="mini-control" id="mini-next" type="button" aria-label="次の曲"><svg><use href="#icon-next" /></svg></button>
+    </div>
+
+    <!-- 再生画面 -->
+    <section class="now-playing" id="now-playing" aria-label="再生画面" aria-hidden="true">
+      <button class="np-grabber" id="np-close" type="button" aria-label="再生画面を閉じる"></button>
+      <div class="np-art" id="np-art" aria-hidden="true">♪</div>
+      <div class="np-info">
+        <strong id="np-title">曲名</strong>
+        <span id="np-state">オフライン保存済み</span>
       </div>
-      <div class="player-controls">
-        <button id="previous" type="button" aria-label="前の曲">‹</button>
-        <button id="play-pause" class="play-pause" type="button" aria-label="再生">▶</button>
-        <button id="next" type="button" aria-label="次の曲">›</button>
-      </div>
-      <div class="timeline">
-        <span id="current-time">0:00</span>
+      <div class="np-timeline">
         <input id="seek" type="range" min="0" max="100" value="0" step="0.1" aria-label="再生位置" />
-        <span id="duration">0:00</span>
+        <div class="np-times"><span id="current-time">0:00</span><span id="duration">0:00</span></div>
       </div>
-      <audio id="audio" preload="metadata"></audio>
+      <div class="np-controls">
+        <button id="previous" type="button" aria-label="前の曲"><svg><use href="#icon-prev" /></svg></button>
+        <button id="play-pause" class="np-play" type="button" aria-label="再生 / 一時停止">
+          <svg class="icon-play-state icon-play"><use href="#icon-play" /></svg>
+          <svg class="icon-play-state icon-pause"><use href="#icon-pause" /></svg>
+        </button>
+        <button id="next" type="button" aria-label="次の曲"><svg><use href="#icon-next" /></svg></button>
+      </div>
     </section>
+
+    <!-- アクションシート -->
+    <div class="sheet-backdrop" id="sheet-backdrop" hidden>
+      <div class="action-sheet" id="action-sheet" role="menu"></div>
+    </div>
+
+    <!-- 入力ダイアログ -->
+    <div class="sheet-backdrop dialog-backdrop" id="dialog-backdrop" hidden>
+      <form class="dialog" id="dialog-form">
+        <h3 id="dialog-title">新規プレイリスト</h3>
+        <input id="dialog-input" type="text" maxlength="60" placeholder="プレイリスト名" />
+        <div class="dialog-buttons">
+          <button type="button" id="dialog-cancel">キャンセル</button>
+          <button type="submit" id="dialog-ok">作成</button>
+        </div>
+      </form>
+    </div>
+
+    <aside id="toast" class="toast" role="status" aria-live="polite" hidden></aside>
+    <audio id="audio" preload="metadata"></audio>
 
     <script src="/app.js" type="module"></script>
   </body>

@@ -1,16 +1,35 @@
 const DB_NAME = "oto-offline-library";
-const STORE_NAME = "tracks";
-const DB_VERSION = 1;
+const DB_VERSION = 2;
+const TRACK_STORE = "tracks";
+const PLAYLIST_STORE = "playlists";
 
 const elements = {
   fileInput: document.querySelector("#file-input"),
-  pickFiles: document.querySelector("#pick-files"),
-  emptyPick: document.querySelector("#empty-pick"),
-  emptyLibrary: document.querySelector("#empty-library"),
-  trackList: document.querySelector("#track-list"),
-  librarySummary: document.querySelector("#library-summary"),
   networkBadge: document.querySelector("#network-badge"),
   installApp: document.querySelector("#install-app"),
+  songsCount: document.querySelector("#songs-count"),
+  playlistsCount: document.querySelector("#playlists-count"),
+  recentSection: document.querySelector("#recent-section"),
+  recentGrid: document.querySelector("#recent-grid"),
+  songList: document.querySelector("#song-list"),
+  songsEmpty: document.querySelector("#songs-empty"),
+  songsActions: document.querySelector("#songs-actions"),
+  playAll: document.querySelector("#play-all"),
+  shuffleAll: document.querySelector("#shuffle-all"),
+  importSongs: document.querySelector("#import-songs"),
+  emptyImport: document.querySelector("#empty-import"),
+  playlistList: document.querySelector("#playlist-list"),
+  playlistsEmpty: document.querySelector("#playlists-empty"),
+  newPlaylist: document.querySelector("#new-playlist"),
+  playlistTitle: document.querySelector("#playlist-title"),
+  playlistMeta: document.querySelector("#playlist-meta"),
+  playlistActions: document.querySelector("#playlist-actions"),
+  playlistPlay: document.querySelector("#playlist-play"),
+  playlistShuffle: document.querySelector("#playlist-shuffle"),
+  playlistEmpty: document.querySelector("#playlist-empty"),
+  playlistTrackList: document.querySelector("#playlist-track-list"),
+  playlistOptions: document.querySelector("#playlist-options"),
+  pickFiles: document.querySelector("#pick-files"),
   form: document.querySelector("#convert-form"),
   accessPanel: document.querySelector("#access-panel"),
   accessCode: document.querySelector("#access-code"),
@@ -19,10 +38,17 @@ const elements = {
   statusMessage: document.querySelector("#status-message"),
   statusPercent: document.querySelector("#status-percent"),
   progress: document.querySelector("#progress"),
-  toast: document.querySelector("#toast"),
-  player: document.querySelector("#player"),
-  playerTitle: document.querySelector("#player-title"),
-  playerState: document.querySelector("#player-state"),
+  miniPlayer: document.querySelector("#mini-player"),
+  miniOpen: document.querySelector("#mini-open"),
+  miniArt: document.querySelector("#mini-art"),
+  miniTitle: document.querySelector("#mini-title"),
+  miniPlay: document.querySelector("#mini-play"),
+  miniNext: document.querySelector("#mini-next"),
+  nowPlaying: document.querySelector("#now-playing"),
+  npClose: document.querySelector("#np-close"),
+  npArt: document.querySelector("#np-art"),
+  npTitle: document.querySelector("#np-title"),
+  npState: document.querySelector("#np-state"),
   audio: document.querySelector("#audio"),
   playPause: document.querySelector("#play-pause"),
   previous: document.querySelector("#previous"),
@@ -30,25 +56,32 @@ const elements = {
   seek: document.querySelector("#seek"),
   currentTime: document.querySelector("#current-time"),
   duration: document.querySelector("#duration"),
+  sheetBackdrop: document.querySelector("#sheet-backdrop"),
+  actionSheet: document.querySelector("#action-sheet"),
+  dialogBackdrop: document.querySelector("#dialog-backdrop"),
+  dialogForm: document.querySelector("#dialog-form"),
+  dialogTitle: document.querySelector("#dialog-title"),
+  dialogInput: document.querySelector("#dialog-input"),
+  dialogCancel: document.querySelector("#dialog-cancel"),
+  dialogOk: document.querySelector("#dialog-ok"),
+  toast: document.querySelector("#toast"),
 };
 
 let dbPromise;
 let tracks = [];
+let playlists = [];
+let dataLoaded = false;
+let queue = [];
+let queueIndex = -1;
 let currentTrackId = null;
 let currentObjectUrl = null;
 let installPrompt = null;
 let toastTimer = null;
 let requiresAccessCode = false;
+let currentRoute = null;
+let dialogSubmit = null;
 
-function currentAccessCode() {
-  return elements.accessCode.value.trim();
-}
-
-function apiOptions(options = {}) {
-  const headers = new Headers(options.headers || {});
-  if (requiresAccessCode && currentAccessCode()) headers.set("X-Access-Code", currentAccessCode());
-  return { ...options, headers };
-}
+/* ---------- IndexedDB ---------- */
 
 function openDatabase() {
   if (dbPromise) return dbPromise;
@@ -56,8 +89,11 @@ function openDatabase() {
     const request = indexedDB.open(DB_NAME, DB_VERSION);
     request.onupgradeneeded = () => {
       const db = request.result;
-      if (!db.objectStoreNames.contains(STORE_NAME)) {
-        db.createObjectStore(STORE_NAME, { keyPath: "id" });
+      if (!db.objectStoreNames.contains(TRACK_STORE)) {
+        db.createObjectStore(TRACK_STORE, { keyPath: "id" });
+      }
+      if (!db.objectStoreNames.contains(PLAYLIST_STORE)) {
+        db.createObjectStore(PLAYLIST_STORE, { keyPath: "id" });
       }
     };
     request.onsuccess = () => resolve(request.result);
@@ -66,32 +102,30 @@ function openDatabase() {
   return dbPromise;
 }
 
+function storeRequest(storeName, mode, operate) {
+  return openDatabase().then((db) => new Promise((resolve, reject) => {
+    const request = operate(db.transaction(storeName, mode).objectStore(storeName));
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  }));
+}
+
 async function getAllTracks() {
-  const db = await openDatabase();
-  return new Promise((resolve, reject) => {
-    const request = db.transaction(STORE_NAME, "readonly").objectStore(STORE_NAME).getAll();
-    request.onsuccess = () => resolve(request.result.sort((a, b) => b.createdAt - a.createdAt));
-    request.onerror = () => reject(request.error);
-  });
+  const rows = await storeRequest(TRACK_STORE, "readonly", (store) => store.getAll());
+  return rows.sort((a, b) => b.createdAt - a.createdAt);
 }
 
-async function saveTrack(track) {
-  const db = await openDatabase();
-  return new Promise((resolve, reject) => {
-    const request = db.transaction(STORE_NAME, "readwrite").objectStore(STORE_NAME).put(track);
-    request.onsuccess = () => resolve(track);
-    request.onerror = () => reject(request.error);
-  });
+async function getAllPlaylists() {
+  const rows = await storeRequest(PLAYLIST_STORE, "readonly", (store) => store.getAll());
+  return rows.sort((a, b) => a.createdAt - b.createdAt);
 }
 
-async function removeTrack(id) {
-  const db = await openDatabase();
-  return new Promise((resolve, reject) => {
-    const request = db.transaction(STORE_NAME, "readwrite").objectStore(STORE_NAME).delete(id);
-    request.onsuccess = () => resolve();
-    request.onerror = () => reject(request.error);
-  });
-}
+const saveTrack = (track) => storeRequest(TRACK_STORE, "readwrite", (store) => store.put(track));
+const removeTrackRecord = (id) => storeRequest(TRACK_STORE, "readwrite", (store) => store.delete(id));
+const savePlaylist = (playlist) => storeRequest(PLAYLIST_STORE, "readwrite", (store) => store.put(playlist));
+const removePlaylistRecord = (id) => storeRequest(PLAYLIST_STORE, "readwrite", (store) => store.delete(id));
+
+/* ---------- ユーティリティ ---------- */
 
 function newId() {
   return globalThis.crypto && crypto.randomUUID ? crypto.randomUUID() : Date.now() + "-" + Math.random();
@@ -112,6 +146,20 @@ function formatTime(seconds) {
   return minutes + ":" + String(Math.floor(seconds % 60)).padStart(2, "0");
 }
 
+function artGradient(seed) {
+  let hash = 0;
+  for (const ch of String(seed)) hash = (hash * 31 + ch.codePointAt(0)) % 360;
+  return `linear-gradient(135deg, hsl(${hash} 72% 60%), hsl(${(hash + 55) % 360} 70% 42%))`;
+}
+
+function iconSvg(name) {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  const use = document.createElementNS("http://www.w3.org/2000/svg", "use");
+  use.setAttribute("href", "#icon-" + name);
+  svg.append(use);
+  return svg;
+}
+
 function showToast(message) {
   clearTimeout(toastTimer);
   elements.toast.textContent = message;
@@ -119,58 +167,318 @@ function showToast(message) {
   toastTimer = setTimeout(() => { elements.toast.hidden = true; }, 3600);
 }
 
-function createTrackRow(track, index) {
+function currentAccessCode() {
+  return elements.accessCode.value.trim();
+}
+
+function apiOptions(options = {}) {
+  const headers = new Headers(options.headers || {});
+  if (requiresAccessCode && currentAccessCode()) headers.set("X-Access-Code", currentAccessCode());
+  return { ...options, headers };
+}
+
+/* ---------- ルーティング ---------- */
+
+const PAGE_DEPTH = { library: 0, songs: 1, playlists: 1, download: 1, playlist: 2 };
+
+function parseRoute() {
+  const parts = location.hash.replace(/^#\/?/, "").split("/").filter(Boolean);
+  const name = parts[0] || "library";
+  if (name === "songs") return { page: "songs" };
+  if (name === "playlists") return { page: "playlists" };
+  if (name === "playlist" && parts[1]) return { page: "playlist", id: decodeURIComponent(parts[1]) };
+  if (name === "download") return { page: "download" };
+  return { page: "library" };
+}
+
+function renderRoute(animate = true) {
+  const route = parseRoute();
+  if (route.page === "playlist" && dataLoaded && !playlists.some((pl) => pl.id === route.id)) {
+    location.replace("#/playlists");
+    return;
+  }
+  const previousDepth = currentRoute ? PAGE_DEPTH[currentRoute.page] : PAGE_DEPTH[route.page];
+  const changed = !currentRoute || currentRoute.page !== route.page || currentRoute.id !== route.id;
+  document.querySelectorAll(".page").forEach((page) => {
+    const active = page.dataset.route === route.page;
+    page.classList.toggle("is-active", active);
+    page.classList.remove("anim-fwd", "anim-back");
+    if (active && animate && changed) {
+      page.classList.add(PAGE_DEPTH[route.page] >= previousDepth ? "anim-fwd" : "anim-back");
+    }
+  });
+  currentRoute = route;
+  closeActionSheet();
+  closeDialog();
+  renderPage();
+  if (changed) window.scrollTo(0, 0);
+}
+
+function renderPage() {
+  if (!dataLoaded || !currentRoute) return;
+  if (currentRoute.page === "library") renderLibraryPage();
+  else if (currentRoute.page === "songs") renderSongsPage();
+  else if (currentRoute.page === "playlists") renderPlaylistsPage();
+  else if (currentRoute.page === "playlist") renderPlaylistPage();
+  updatePlayingIndicators();
+}
+
+/* ---------- 各ページの描画 ---------- */
+
+function renderLibraryPage() {
+  elements.songsCount.textContent = tracks.length ? String(tracks.length) : "";
+  elements.playlistsCount.textContent = playlists.length ? String(playlists.length) : "";
+  const recent = tracks.slice(0, 6);
+  elements.recentSection.hidden = recent.length === 0;
+  elements.recentGrid.replaceChildren(...recent.map(createRecentTile));
+}
+
+function createRecentTile(track) {
+  const tile = document.createElement("button");
+  tile.type = "button";
+  tile.className = "recent-tile";
+  const art = document.createElement("span");
+  art.className = "recent-art";
+  art.style.background = artGradient(track.title);
+  art.textContent = "♪";
+  const name = document.createElement("span");
+  name.className = "recent-name";
+  name.textContent = track.title;
+  tile.append(art, name);
+  tile.addEventListener("click", () => startQueue(tracks.map((t) => t.id), track.id));
+  return tile;
+}
+
+function renderSongsPage() {
+  const hasTracks = tracks.length > 0;
+  elements.songsEmpty.hidden = hasTracks;
+  elements.songsActions.hidden = !hasTracks;
+  elements.songList.replaceChildren(...tracks.map((track) => createTrackRow(track, {
+    onPlay: () => startQueue(tracks.map((t) => t.id), track.id),
+    onOptions: () => showTrackOptions(track),
+  })));
+}
+
+function createTrackRow(track, { onPlay, onOptions }) {
   const item = document.createElement("li");
-  item.className = "track-row" + (track.id === currentTrackId ? " is-current" : "");
+  item.className = "track-row";
   item.dataset.id = track.id;
 
-  const number = document.createElement("span");
-  number.className = "track-index";
-  number.textContent = String(index + 1).padStart(2, "0");
+  const main = document.createElement("button");
+  main.type = "button";
+  main.className = "track-main";
 
-  const info = document.createElement("div");
-  info.className = "track-info";
+  const art = document.createElement("span");
+  art.className = "track-art";
+  art.style.background = artGradient(track.title);
+  art.textContent = "♪";
+
+  const text = document.createElement("span");
+  text.className = "track-text";
   const title = document.createElement("strong");
+  title.className = "track-title";
   title.textContent = track.title;
-  const detail = document.createElement("span");
-  detail.textContent = formatSize(track.size) + "・オフライン保存済み";
-  info.append(title, detail);
+  const sub = document.createElement("span");
+  sub.className = "track-sub";
+  sub.textContent = formatSize(track.size) + "・オフライン保存済み";
+  text.append(title, sub);
 
-  const play = document.createElement("button");
-  play.className = "track-play";
-  play.type = "button";
-  play.dataset.action = "play";
-  play.setAttribute("aria-label", track.title + "を再生");
-  play.textContent = track.id === currentTrackId && !elements.audio.paused ? "Ⅱ" : "▶";
+  const bars = document.createElement("span");
+  bars.className = "bars";
+  bars.hidden = true;
+  bars.append(...[0, 1, 2].map(() => document.createElement("i")));
 
-  const remove = document.createElement("button");
-  remove.className = "track-delete";
-  remove.type = "button";
-  remove.dataset.action = "delete";
-  remove.setAttribute("aria-label", track.title + "を削除");
-  remove.textContent = "×";
+  main.append(art, text, bars);
+  main.addEventListener("click", onPlay);
 
-  item.append(number, info, play, remove);
+  const options = document.createElement("button");
+  options.type = "button";
+  options.className = "track-options";
+  options.setAttribute("aria-label", track.title + "の操作");
+  options.append(iconSvg("more"));
+  options.addEventListener("click", onOptions);
+
+  item.append(main, options);
   return item;
 }
 
-function renderLibrary() {
-  const totalSize = tracks.reduce((sum, track) => sum + (track.size || 0), 0);
-  elements.librarySummary.textContent = tracks.length + "曲・" + formatSize(totalSize);
-  elements.emptyLibrary.hidden = tracks.length > 0;
-  elements.trackList.hidden = tracks.length === 0;
-  elements.trackList.replaceChildren(...tracks.map(createTrackRow));
+function renderPlaylistsPage() {
+  elements.playlistsEmpty.hidden = playlists.length > 0;
+  elements.playlistList.replaceChildren(...playlists.map(createPlaylistRow));
 }
 
-async function refreshLibrary() {
-  tracks = await getAllTracks();
-  renderLibrary();
+function createPlaylistRow(playlist) {
+  const item = document.createElement("li");
+  const row = document.createElement("a");
+  row.className = "playlist-row";
+  row.href = "#/playlist/" + encodeURIComponent(playlist.id);
+
+  const art = document.createElement("span");
+  art.className = "playlist-art";
+  art.style.background = artGradient(playlist.name + playlist.id);
+  art.append(iconSvg("playlist"));
+
+  const text = document.createElement("span");
+  text.className = "playlist-text";
+  const name = document.createElement("strong");
+  name.className = "playlist-name";
+  name.textContent = playlist.name;
+  const sub = document.createElement("span");
+  sub.className = "playlist-sub";
+  sub.textContent = playlistTracks(playlist).length + "曲";
+  text.append(name, sub);
+
+  const chevron = iconSvg("chevron");
+  chevron.classList.add("chevron");
+
+  row.append(art, text, chevron);
+  item.append(row);
+  return item;
 }
+
+function playlistTracks(playlist) {
+  return playlist.trackIds.map((id) => tracks.find((track) => track.id === id)).filter(Boolean);
+}
+
+function renderPlaylistPage() {
+  const playlist = playlists.find((pl) => pl.id === currentRoute.id);
+  if (!playlist) return;
+  const listTracks = playlistTracks(playlist);
+  elements.playlistTitle.textContent = playlist.name;
+  elements.playlistMeta.textContent = listTracks.length + "曲";
+  elements.playlistActions.hidden = listTracks.length === 0;
+  elements.playlistEmpty.hidden = listTracks.length > 0;
+  elements.playlistTrackList.replaceChildren(...listTracks.map((track) => createTrackRow(track, {
+    onPlay: () => startQueue(listTracks.map((t) => t.id), track.id),
+    onOptions: () => showPlaylistTrackOptions(playlist, track),
+  })));
+}
+
+/* ---------- 再生 ---------- */
+
+function shuffleArray(list) {
+  for (let i = list.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [list[i], list[j]] = [list[j], list[i]];
+  }
+  return list;
+}
+
+function startQueue(ids, startId = null, shuffle = false) {
+  if (!ids.length) return;
+  const list = shuffle ? shuffleArray([...ids]) : [...ids];
+  queue = list;
+  queueIndex = startId ? Math.max(0, list.indexOf(startId)) : 0;
+  playTrack(queue[queueIndex]);
+}
+
+async function playTrack(id, autoplay = true) {
+  const track = tracks.find((candidate) => candidate.id === id);
+  if (!track) return;
+  const inQueue = queue.indexOf(id);
+  if (inQueue >= 0) {
+    queueIndex = inQueue;
+  } else {
+    queue = tracks.map((t) => t.id);
+    queueIndex = queue.indexOf(id);
+  }
+  if (currentTrackId !== id) {
+    elements.audio.pause();
+    if (currentObjectUrl) URL.revokeObjectURL(currentObjectUrl);
+    currentObjectUrl = URL.createObjectURL(track.blob);
+    currentTrackId = id;
+    elements.audio.src = currentObjectUrl;
+    updateNowPlayingInfo(track);
+    updateMediaSession(track);
+    updatePlayingIndicators();
+  }
+  if (autoplay) {
+    try { await elements.audio.play(); } catch (_) { showToast("再生ボタンをもう一度押してください"); }
+  }
+}
+
+function updateNowPlayingInfo(track) {
+  const gradient = artGradient(track.title);
+  elements.miniTitle.textContent = track.title;
+  elements.miniArt.style.background = gradient;
+  elements.npTitle.textContent = track.title;
+  elements.npArt.style.background = gradient;
+  elements.npState.textContent = "オフライン保存済み";
+  elements.miniPlayer.hidden = false;
+}
+
+function adjacentTrack(direction) {
+  if (!queue.length) queue = tracks.map((track) => track.id);
+  if (!queue.length) return;
+  queueIndex = queueIndex < 0 ? 0 : (queueIndex + direction + queue.length) % queue.length;
+  playTrack(queue[queueIndex]);
+}
+
+function togglePlayback() {
+  if (!currentTrackId) {
+    if (tracks.length) startQueue(tracks.map((track) => track.id));
+    return;
+  }
+  if (elements.audio.paused) elements.audio.play();
+  else elements.audio.pause();
+}
+
+function stopPlayback() {
+  elements.audio.pause();
+  elements.audio.removeAttribute("src");
+  elements.audio.load();
+  if (currentObjectUrl) URL.revokeObjectURL(currentObjectUrl);
+  currentObjectUrl = null;
+  currentTrackId = null;
+  elements.miniPlayer.hidden = true;
+  closeNowPlaying();
+  updatePlayingIndicators();
+}
+
+function updatePlayingIndicators() {
+  document.querySelectorAll(".track-row").forEach((row) => {
+    const isCurrent = row.dataset.id === currentTrackId;
+    row.classList.toggle("is-current", isCurrent);
+    const bars = row.querySelector(".bars");
+    if (bars) bars.hidden = !isCurrent;
+  });
+}
+
+function updateMediaSession(track) {
+  if (!("mediaSession" in navigator)) return;
+  navigator.mediaSession.metadata = new MediaMetadata({
+    title: track.title,
+    artist: "OTO オフラインライブラリ",
+    album: "この端末に保存済み",
+    artwork: [{ src: "/icon.svg", sizes: "any", type: "image/svg+xml" }],
+  });
+}
+
+function openNowPlaying() {
+  elements.nowPlaying.classList.add("open");
+  elements.nowPlaying.setAttribute("aria-hidden", "false");
+  document.body.classList.add("np-open");
+}
+
+function closeNowPlaying() {
+  elements.nowPlaying.classList.remove("open");
+  elements.nowPlaying.setAttribute("aria-hidden", "true");
+  document.body.classList.remove("np-open");
+}
+
+/* ---------- ライブラリ操作 ---------- */
 
 async function persistStorage() {
   if (navigator.storage && navigator.storage.persist) {
     try { await navigator.storage.persist(); } catch (_) { /* Browser decides. */ }
   }
+}
+
+async function refreshData() {
+  tracks = await getAllTracks();
+  playlists = await getAllPlaylists();
+  dataLoaded = true;
+  renderPage();
 }
 
 async function importBlob(blob, filename) {
@@ -195,7 +503,7 @@ async function importBlob(blob, filename) {
   };
   await saveTrack(track);
   await persistStorage();
-  await refreshLibrary();
+  await refreshData();
   showToast("「" + track.title + "」をオフライン保存しました");
   return track;
 }
@@ -222,60 +530,169 @@ async function importRemote(url, filename) {
   return importBlob(await response.blob(), filename);
 }
 
-function updateMediaSession(track) {
-  if (!("mediaSession" in navigator)) return;
-  navigator.mediaSession.metadata = new MediaMetadata({
-    title: track.title,
-    artist: "OTO オフラインライブラリ",
-    album: "この端末に保存済み",
-    artwork: [{ src: "/icon.svg", sizes: "any", type: "image/svg+xml" }],
-  });
-}
-
-async function playTrack(id, autoplay = true) {
-  const track = tracks.find((candidate) => candidate.id === id);
-  if (!track) return;
-  if (currentTrackId !== id) {
-    elements.audio.pause();
-    if (currentObjectUrl) URL.revokeObjectURL(currentObjectUrl);
-    currentObjectUrl = URL.createObjectURL(track.blob);
-    currentTrackId = id;
-    elements.audio.src = currentObjectUrl;
-    elements.playerTitle.textContent = track.title;
-    elements.playerState.textContent = "オフライン保存済み";
-    elements.player.hidden = false;
-    updateMediaSession(track);
-    renderLibrary();
-  }
-  if (autoplay) {
-    try { await elements.audio.play(); } catch (_) { showToast("再生ボタンをもう一度押してください"); }
-  }
-}
-
-function adjacentTrack(direction) {
-  if (!tracks.length) return;
-  const index = tracks.findIndex((track) => track.id === currentTrackId);
-  const nextIndex = index < 0 ? 0 : (index + direction + tracks.length) % tracks.length;
-  playTrack(tracks[nextIndex].id);
-}
-
 async function deleteTrack(id) {
   const track = tracks.find((candidate) => candidate.id === id);
   if (!track) return;
   if (!confirm("「" + track.title + "」をこの端末から削除しますか？")) return;
-  if (currentTrackId === id) {
-    elements.audio.pause();
-    elements.audio.removeAttribute("src");
-    elements.audio.load();
-    if (currentObjectUrl) URL.revokeObjectURL(currentObjectUrl);
-    currentObjectUrl = null;
-    currentTrackId = null;
-    elements.player.hidden = true;
+  if (currentTrackId === id) stopPlayback();
+  await removeTrackRecord(id);
+  for (const playlist of playlists) {
+    if (playlist.trackIds.includes(id)) {
+      playlist.trackIds = playlist.trackIds.filter((trackId) => trackId !== id);
+      await savePlaylist(playlist);
+    }
   }
-  await removeTrack(id);
-  await refreshLibrary();
+  queue = queue.filter((queuedId) => queuedId !== id);
+  queueIndex = queue.indexOf(currentTrackId);
+  await refreshData();
   showToast("端末から削除しました");
 }
+
+/* ---------- プレイリスト操作 ---------- */
+
+async function createPlaylist(name, initialTrackId = null) {
+  const playlist = {
+    id: newId(),
+    name,
+    trackIds: initialTrackId ? [initialTrackId] : [],
+    createdAt: Date.now(),
+  };
+  await savePlaylist(playlist);
+  await refreshData();
+  showToast("「" + name + "」を作成しました");
+  return playlist;
+}
+
+async function addTrackToPlaylist(playlistId, trackId) {
+  const playlist = playlists.find((pl) => pl.id === playlistId);
+  if (!playlist) return;
+  if (playlist.trackIds.includes(trackId)) {
+    showToast("「" + playlist.name + "」にはすでに追加されています");
+    return;
+  }
+  playlist.trackIds.push(trackId);
+  await savePlaylist(playlist);
+  await refreshData();
+  showToast("「" + playlist.name + "」に追加しました");
+}
+
+async function removeTrackFromPlaylist(playlist, trackId) {
+  playlist.trackIds = playlist.trackIds.filter((id) => id !== trackId);
+  await savePlaylist(playlist);
+  await refreshData();
+  showToast("プレイリストから削除しました");
+}
+
+/* ---------- アクションシート・ダイアログ ---------- */
+
+function showActionSheet(title, actions) {
+  const group = document.createElement("div");
+  group.className = "sheet-group";
+  if (title) {
+    const heading = document.createElement("div");
+    heading.className = "sheet-title";
+    heading.textContent = title;
+    group.append(heading);
+  }
+  actions.forEach(({ label, danger, handler }) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "sheet-btn" + (danger ? " danger" : "");
+    button.textContent = label;
+    button.addEventListener("click", () => {
+      closeActionSheet();
+      handler();
+    });
+    group.append(button);
+  });
+  const cancel = document.createElement("button");
+  cancel.type = "button";
+  cancel.className = "sheet-cancel";
+  cancel.textContent = "キャンセル";
+  cancel.addEventListener("click", closeActionSheet);
+  elements.actionSheet.replaceChildren(group, cancel);
+  elements.sheetBackdrop.hidden = false;
+}
+
+function closeActionSheet() {
+  elements.sheetBackdrop.hidden = true;
+}
+
+function showInputDialog({ title, placeholder = "", value = "", confirmLabel = "OK" }, onSubmit) {
+  elements.dialogTitle.textContent = title;
+  elements.dialogInput.placeholder = placeholder;
+  elements.dialogInput.value = value;
+  elements.dialogOk.textContent = confirmLabel;
+  dialogSubmit = onSubmit;
+  elements.dialogBackdrop.hidden = false;
+  setTimeout(() => elements.dialogInput.focus(), 60);
+}
+
+function closeDialog() {
+  elements.dialogBackdrop.hidden = true;
+  dialogSubmit = null;
+}
+
+function showTrackOptions(track) {
+  showActionSheet(track.title, [
+    { label: "プレイリストに追加", handler: () => showPlaylistPicker(track) },
+    { label: "ライブラリから削除", danger: true, handler: () => deleteTrack(track.id) },
+  ]);
+}
+
+function showPlaylistTrackOptions(playlist, track) {
+  showActionSheet(track.title, [
+    { label: "プレイリストから削除", danger: true, handler: () => removeTrackFromPlaylist(playlist, track.id) },
+  ]);
+}
+
+function showPlaylistPicker(track) {
+  const actions = playlists.map((playlist) => ({
+    label: playlist.name,
+    handler: () => addTrackToPlaylist(playlist.id, track.id),
+  }));
+  actions.push({
+    label: "新規プレイリスト…",
+    handler: () => promptNewPlaylist(track.id),
+  });
+  showActionSheet("プレイリストに追加", actions);
+}
+
+function promptNewPlaylist(initialTrackId = null) {
+  showInputDialog(
+    { title: "新規プレイリスト", placeholder: "プレイリスト名", confirmLabel: "作成" },
+    (name) => createPlaylist(name, initialTrackId)
+  );
+}
+
+function showPlaylistOptions(playlist) {
+  showActionSheet(playlist.name, [
+    {
+      label: "名前を変更",
+      handler: () => showInputDialog(
+        { title: "名前を変更", value: playlist.name, confirmLabel: "保存" },
+        async (name) => {
+          playlist.name = name;
+          await savePlaylist(playlist);
+          await refreshData();
+        }
+      ),
+    },
+    {
+      label: "プレイリストを削除",
+      danger: true,
+      handler: async () => {
+        if (!confirm("「" + playlist.name + "」を削除しますか？曲はライブラリに残ります。")) return;
+        await removePlaylistRecord(playlist.id);
+        await refreshData();
+        location.replace("#/playlists");
+        showToast("プレイリストを削除しました");
+      },
+    },
+  ]);
+}
+
+/* ---------- 変換（MP3ダウンロード） ---------- */
 
 function renderJob(job) {
   const percent = Math.max(0, Math.min(100, job.progress || 0));
@@ -334,41 +751,65 @@ elements.form.addEventListener("submit", async (event) => {
   }
 });
 
+/* ---------- イベント ---------- */
+
+window.addEventListener("hashchange", () => renderRoute());
+
 elements.pickFiles.addEventListener("click", () => elements.fileInput.click());
-elements.emptyPick.addEventListener("click", () => elements.fileInput.click());
+elements.importSongs.addEventListener("click", () => elements.fileInput.click());
+elements.emptyImport.addEventListener("click", () => elements.fileInput.click());
 elements.fileInput.addEventListener("change", () => importFiles(elements.fileInput.files));
 
-elements.trackList.addEventListener("click", (event) => {
-  const button = event.target.closest("button");
-  const row = event.target.closest(".track-row");
-  if (!button || !row) return;
-  if (button.dataset.action === "delete") deleteTrack(row.dataset.id);
-  if (button.dataset.action === "play") {
-    if (row.dataset.id === currentTrackId && !elements.audio.paused) elements.audio.pause();
-    else playTrack(row.dataset.id);
-  }
+elements.playAll.addEventListener("click", () => startQueue(tracks.map((track) => track.id)));
+elements.shuffleAll.addEventListener("click", () => startQueue(tracks.map((track) => track.id), null, true));
+elements.playlistPlay.addEventListener("click", () => {
+  const playlist = playlists.find((pl) => pl.id === currentRoute.id);
+  if (playlist) startQueue(playlistTracks(playlist).map((track) => track.id));
+});
+elements.playlistShuffle.addEventListener("click", () => {
+  const playlist = playlists.find((pl) => pl.id === currentRoute.id);
+  if (playlist) startQueue(playlistTracks(playlist).map((track) => track.id), null, true);
 });
 
-elements.playPause.addEventListener("click", () => {
-  if (!currentTrackId && tracks.length) playTrack(tracks[0].id);
-  else if (elements.audio.paused) elements.audio.play();
-  else elements.audio.pause();
+elements.newPlaylist.addEventListener("click", () => promptNewPlaylist());
+elements.playlistOptions.addEventListener("click", () => {
+  const playlist = playlists.find((pl) => pl.id === currentRoute.id);
+  if (playlist) showPlaylistOptions(playlist);
 });
+
+elements.sheetBackdrop.addEventListener("click", (event) => {
+  if (event.target === elements.sheetBackdrop) closeActionSheet();
+});
+elements.dialogBackdrop.addEventListener("click", (event) => {
+  if (event.target === elements.dialogBackdrop) closeDialog();
+});
+elements.dialogCancel.addEventListener("click", closeDialog);
+elements.dialogForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  const name = elements.dialogInput.value.trim();
+  if (!name) return;
+  const submit = dialogSubmit;
+  closeDialog();
+  if (submit) submit(name);
+});
+
+elements.miniOpen.addEventListener("click", openNowPlaying);
+elements.npClose.addEventListener("click", closeNowPlaying);
+elements.miniPlay.addEventListener("click", togglePlayback);
+elements.miniNext.addEventListener("click", () => adjacentTrack(1));
+elements.playPause.addEventListener("click", togglePlayback);
 elements.previous.addEventListener("click", () => adjacentTrack(-1));
 elements.next.addEventListener("click", () => adjacentTrack(1));
+
 elements.audio.addEventListener("play", () => {
-  elements.playPause.textContent = "Ⅱ";
-  elements.playPause.setAttribute("aria-label", "一時停止");
-  elements.playerState.textContent = "再生中";
+  document.body.classList.add("is-playing");
+  elements.npState.textContent = "再生中";
   if ("mediaSession" in navigator) navigator.mediaSession.playbackState = "playing";
-  renderLibrary();
 });
 elements.audio.addEventListener("pause", () => {
-  elements.playPause.textContent = "▶";
-  elements.playPause.setAttribute("aria-label", "再生");
-  elements.playerState.textContent = "一時停止";
+  document.body.classList.remove("is-playing");
+  elements.npState.textContent = "一時停止";
   if ("mediaSession" in navigator) navigator.mediaSession.playbackState = "paused";
-  renderLibrary();
 });
 elements.audio.addEventListener("timeupdate", () => {
   elements.currentTime.textContent = formatTime(elements.audio.currentTime);
@@ -419,6 +860,8 @@ elements.installApp.addEventListener("click", async () => {
 });
 window.addEventListener("appinstalled", () => showToast("ホーム画面に追加しました"));
 
+/* ---------- 起動 ---------- */
+
 async function start() {
   updateNetworkStatus();
   const cachedCode = localStorage.getItem("oto-access-code") || "";
@@ -435,7 +878,8 @@ async function start() {
     elements.accessPanel.hidden = false;
     elements.accessCode.required = true;
   }
-  await refreshLibrary();
+  await refreshData();
+  renderRoute(false);
   if ("serviceWorker" in navigator) {
     try { await navigator.serviceWorker.register("/service-worker.js"); } catch (_) { showToast("オフライン機能を準備できませんでした"); }
   }

@@ -40,12 +40,15 @@ class AppTests(unittest.TestCase):
 
     def test_home_page(self):
         with self.request("/") as response:
-            self.assertIn("音を、", response.read().decode())
+            body = response.read().decode()
+        self.assertIn("ライブラリ", body)
+        self.assertIn("MP3ダウンロード", body)
+        self.assertIn("プレイリスト", body)
 
     def test_serves_pwa_files(self):
         for path, content_type in (
             ("/manifest.webmanifest", "application/manifest+json"),
-            ("/service-worker.js", "text/javascript"),
+            ("/service-worker.js", "javascript"),
             ("/icon.svg", "image/svg+xml"),
         ):
             with self.subTest(path=path), self.request(path) as response:

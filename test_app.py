@@ -44,6 +44,7 @@ class AppTests(unittest.TestCase):
         self.assertIn("ライブラリ", body)
         self.assertIn("MP3ダウンロード", body)
         self.assertIn("プレイリスト", body)
+        self.assertIn("カット", body)
 
     def test_serves_pwa_files(self):
         for path, content_type in (

@@ -20,6 +20,8 @@ const elements = {
   shuffleAll: document.querySelector("#shuffle-all"),
   importSongs: document.querySelector("#import-songs"),
   emptyImport: document.querySelector("#empty-import"),
+  cutList: document.querySelector("#cut-list"),
+  cutEmpty: document.querySelector("#cut-empty"),
   playlistList: document.querySelector("#playlist-list"),
   playlistsEmpty: document.querySelector("#playlists-empty"),
   newPlaylist: document.querySelector("#new-playlist"),
@@ -181,7 +183,7 @@ function apiOptions(options = {}) {
 
 /* ---------- ルーティング ---------- */
 
-const PAGE_DEPTH = { library: 0, songs: 1, playlists: 1, download: 1, playlist: 2 };
+const PAGE_DEPTH = { library: 0, songs: 1, playlists: 1, download: 1, cut: 1, playlist: 2 };
 
 function parseRoute() {
   const parts = location.hash.replace(/^#\/?/, "").split("/").filter(Boolean);
@@ -190,6 +192,7 @@ function parseRoute() {
   if (name === "playlists") return { page: "playlists" };
   if (name === "playlist" && parts[1]) return { page: "playlist", id: decodeURIComponent(parts[1]) };
   if (name === "download") return { page: "download" };
+  if (name === "cut") return { page: "cut" };
   return { page: "library" };
 }
 
@@ -220,6 +223,7 @@ function renderPage() {
   if (!dataLoaded || !currentRoute) return;
   if (currentRoute.page === "library") renderLibraryPage();
   else if (currentRoute.page === "songs") renderSongsPage();
+  else if (currentRoute.page === "cut") renderCutPage();
   else if (currentRoute.page === "playlists") renderPlaylistsPage();
   else if (currentRoute.page === "playlist") renderPlaylistPage();
   updatePlayingIndicators();
@@ -261,7 +265,7 @@ function renderSongsPage() {
   })));
 }
 
-function createTrackRow(track, { onPlay, onOptions }) {
+function createTrackRow(track, { onPlay, onOptions, subtitle }) {
   const item = document.createElement("li");
   item.className = "track-row";
   item.dataset.id = track.id;
@@ -282,7 +286,7 @@ function createTrackRow(track, { onPlay, onOptions }) {
   title.textContent = track.title;
   const sub = document.createElement("span");
   sub.className = "track-sub";
-  sub.textContent = formatSize(track.size) + "・オフライン保存済み";
+  sub.textContent = subtitle || (formatSize(track.size) + "・オフライン保存済み");
   text.append(title, sub);
 
   const bars = document.createElement("span");
@@ -302,6 +306,15 @@ function createTrackRow(track, { onPlay, onOptions }) {
 
   item.append(main, options);
   return item;
+}
+
+function renderCutPage() {
+  elements.cutEmpty.hidden = tracks.length > 0;
+  elements.cutList.replaceChildren(...tracks.map((track) => createTrackRow(track, {
+    onPlay: () => beginEdit(track),
+    onOptions: () => showTrackOptions(track),
+    subtitle: "タップしてカット編集",
+  })));
 }
 
 function renderPlaylistsPage() {

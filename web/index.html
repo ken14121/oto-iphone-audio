@@ -242,6 +242,48 @@
       </div>
     </section>
 
+    <!-- カット編集 -->
+    <section class="editor" id="editor" aria-label="カット編集" aria-hidden="true">
+      <header class="editor-bar">
+        <button id="editor-cancel" type="button">キャンセル</button>
+        <strong id="editor-track-title">カット編集</strong>
+        <button id="editor-save" type="button">保存</button>
+      </header>
+      <div class="editor-body">
+        <p class="editor-loading" id="editor-loading">読み込んでいます…</p>
+        <div id="editor-main" hidden>
+          <div class="wave-scroll" id="wave-scroll">
+            <div class="wave-spacer" id="wave-spacer">
+              <canvas id="wave-canvas"></canvas>
+              <div class="wave-regions" id="wave-regions"></div>
+              <div class="wave-playhead" id="wave-playhead"></div>
+            </div>
+          </div>
+          <div class="editor-times">
+            <span id="editor-pos">0:00.0</span>
+            <span id="editor-result" class="editor-result">カット後 0:00</span>
+            <span id="editor-dur">0:00.0</span>
+          </div>
+          <div class="editor-controls">
+            <button id="editor-zoom-out" type="button" aria-label="波形を縮小">−</button>
+            <button id="editor-play" type="button" class="editor-play" aria-label="再生 / 一時停止">
+              <svg class="e-play"><use href="#icon-play" /></svg>
+              <svg class="e-pause"><use href="#icon-pause" /></svg>
+            </button>
+            <button id="editor-add" type="button" class="editor-add">カット範囲を追加</button>
+            <button id="editor-zoom-in" type="button" aria-label="波形を拡大">＋</button>
+          </div>
+          <ul class="region-list" id="region-list"></ul>
+          <p class="editor-hint">「カット範囲を追加」で赤い範囲を作り、両端のつまみをドラッグして削る部分を決めます。＋で波形を拡大すると細かく合わせられます。再生すると赤い範囲を飛ばした状態で聴けます。</p>
+        </div>
+        <div class="editor-progress" id="editor-progress" hidden>
+          <div class="status-line"><strong>MP3に変換しています…</strong><span id="editor-progress-percent">0%</span></div>
+          <div class="progress-track"><div id="editor-progress-bar" class="progress"></div></div>
+          <p class="editor-hint">曲の長さによって少し時間がかかります。画面を閉じずにお待ちください。</p>
+        </div>
+      </div>
+    </section>
+
     <!-- アクションシート -->
     <div class="sheet-backdrop" id="sheet-backdrop" hidden>
       <div class="action-sheet" id="action-sheet" role="menu"></div>

@@ -1,9 +1,12 @@
-const CACHE_NAME = "oto-shell-v5";
+const CACHE_NAME = "oto-shell-v6";
 const APP_SHELL = [
   "/",
   "/index.html",
   "/styles.css",
   "/app.js",
+  "/editor.js",
+  "/editor-worker.js",
+  "/lame.min.js",
   "/manifest.webmanifest",
   "/icon.svg",
 ];

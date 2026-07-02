@@ -49,6 +49,9 @@ class AppTests(unittest.TestCase):
         for path, content_type in (
             ("/manifest.webmanifest", "application/manifest+json"),
             ("/service-worker.js", "javascript"),
+            ("/editor.js", "javascript"),
+            ("/editor-worker.js", "javascript"),
+            ("/lame.min.js", "javascript"),
             ("/icon.svg", "image/svg+xml"),
         ):
             with self.subTest(path=path), self.request(path) as response:

@@ -1,3 +1,5 @@
+import { openEditor } from "/editor.js";
+
 const DB_NAME = "oto-offline-library";
 const DB_VERSION = 2;
 const TRACK_STORE = "tracks";
@@ -636,14 +638,46 @@ function closeDialog() {
 function showTrackOptions(track) {
   showActionSheet(track.title, [
     { label: "プレイリストに追加", handler: () => showPlaylistPicker(track) },
+    { label: "カット編集", handler: () => beginEdit(track) },
     { label: "ライブラリから削除", danger: true, handler: () => deleteTrack(track.id) },
   ]);
 }
 
 function showPlaylistTrackOptions(playlist, track) {
   showActionSheet(track.title, [
+    { label: "カット編集", handler: () => beginEdit(track) },
     { label: "プレイリストから削除", danger: true, handler: () => removeTrackFromPlaylist(playlist, track.id) },
   ]);
+}
+
+function beginEdit(track) {
+  elements.audio.pause();
+  openEditor(track, {
+    showToast,
+    showActionSheet,
+    onSave: async (blob, mode) => {
+      if (mode === "replace") {
+        if (currentTrackId === track.id) stopPlayback();
+        await saveTrack({ ...track, blob, mime: "audio/mpeg", size: blob.size });
+        await refreshData();
+        showToast("「" + track.title + "」を上書き保存しました");
+      } else {
+        const copy = {
+          id: newId(),
+          title: track.title + "（カット済み）",
+          filename: track.filename.replace(/\.mp3$/i, "") + " (cut).mp3",
+          mime: "audio/mpeg",
+          size: blob.size,
+          createdAt: Date.now(),
+          blob,
+        };
+        await saveTrack(copy);
+        await persistStorage();
+        await refreshData();
+        showToast("「" + copy.title + "」を保存しました");
+      }
+    },
+  });
 }
 
 function showPlaylistPicker(track) {

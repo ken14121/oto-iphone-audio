@@ -306,21 +306,26 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as exc:
                 diag["pot_server"] = f"error: {exc}"
             yt_dlp = find_tool("yt-dlp")
+            deno = find_tool("deno")
             if yt_dlp:
                 try:
-                    probe = subprocess.run(
-                        [str(yt_dlp), "-v", "--ignore-config", "--simulate", "http://"],
-                        capture_output=True, text=True, timeout=30, cwd=ROOT,
-                    )
-                    header = [
-                        line for line in (probe.stderr or "").splitlines()
-                        if "[debug]" in line or "plugin" in line.lower() or "pot" in line.lower()
+                    command = [str(yt_dlp), "-v", "--ignore-config", "--simulate", "--no-playlist"]
+                    if deno:
+                        command += ["--js-runtimes", f"deno:{deno}"]
+                    command += [
+                        "--extractor-args", "youtubepot-bgutilhttp:base_url=http://127.0.0.1:4416",
+                        "https://www.youtube.com/watch?v=aqz-KE-bpKQ",
                     ]
-                    diag["ytdlp_debug"] = header[:25]
+                    probe = subprocess.run(command, capture_output=True, text=True, timeout=120, cwd=ROOT)
+                    merged = (probe.stderr or "") + "\n" + (probe.stdout or "")
+                    interesting = re.compile(r"pot|provider|plugin|token|ERROR|WARNING|Sign in|runtime", re.IGNORECASE)
+                    lines = [line for line in merged.splitlines() if interesting.search(line)]
+                    diag["ytdlp_returncode"] = probe.returncode
+                    diag["ytdlp_probe"] = lines[:40]
                 except Exception as exc:
-                    diag["ytdlp_debug"] = f"error: {exc}"
+                    diag["ytdlp_probe"] = f"error: {exc}"
             else:
-                diag["ytdlp_debug"] = "yt-dlp not found"
+                diag["ytdlp_probe"] = "yt-dlp not found"
             self.send_json(diag)
             return
         if path.startswith("/api/jobs/"):

@@ -3,14 +3,24 @@ FROM python:3.13-slim
 WORKDIR /app
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates curl ffmpeg unzip \
+    && apt-get install -y --no-install-recommends ca-certificates curl ffmpeg unzip git \
+    && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
+    && apt-get install -y --no-install-recommends nodejs \
     && rm -rf /var/lib/apt/lists/*
+
+# yt-dlp本体（プラグインが使えるpip版）と、YouTubeのボット検証へ応答するPO Tokenプラグイン
+RUN pip install --no-cache-dir 'yt-dlp[default]' bgutil-ytdlp-pot-provider==1.3.1
+
+# PO Tokenを生成するローカルサーバー（プラグインが 127.0.0.1:4416 を自動検出する）
+RUN git clone --depth 1 --branch 1.3.1 https://github.com/Brainicism/bgutil-ytdlp-pot-provider.git /app/bgutil \
+    && cd /app/bgutil/server \
+    && npm ci \
+    && npx tsc \
+    && npm cache clean --force
 
 COPY . /app
 
 RUN mkdir -p /app/tools /app/downloads \
-    && curl -L --fail --retry 3 https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux -o /app/tools/yt-dlp \
-    && chmod +x /app/tools/yt-dlp \
     && curl -L --fail --retry 3 https://github.com/denoland/deno/releases/latest/download/deno-x86_64-unknown-linux-gnu.zip -o /tmp/deno.zip \
     && unzip /tmp/deno.zip -d /app/tools \
     && chmod +x /app/tools/deno \
@@ -26,4 +36,4 @@ ENV AUDIO_TOOL_HOST=0.0.0.0 \
 
 EXPOSE 10000
 
-CMD ["python", "app.py"]
+CMD ["sh", "-c", "node /app/bgutil/server/build/main.js --port 4416 & exec python app.py"]

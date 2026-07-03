@@ -36,4 +36,4 @@ ENV AUDIO_TOOL_HOST=0.0.0.0 \
 
 EXPOSE 10000
 
-CMD ["sh", "-c", "node /app/bgutil/server/build/main.js --port 4416 & exec python app.py"]
+CMD ["python", "app.py"]

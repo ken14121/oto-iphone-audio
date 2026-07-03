@@ -95,6 +95,36 @@ def run_mock_job(job_id: str) -> None:
     )
 
 
+POT_SERVER_JS = Path(os.environ.get("AUDIO_TOOL_POT_SERVER_JS", "/app/bgutil/server/build/main.js"))
+POT_SERVER_PORT = os.environ.get("AUDIO_TOOL_POT_SERVER_PORT", "4416")
+
+
+def run_pot_server() -> None:
+    """PO Tokenプロバイダー(bgutil)のNodeサーバーを起動し、落ちたら再起動する。"""
+    node = shutil.which("node")
+    if not node or not POT_SERVER_JS.exists():
+        print(f"PO Token server unavailable (node={node}, script exists={POT_SERVER_JS.exists()})", flush=True)
+        return
+    while True:
+        print(f"Starting PO Token server on port {POT_SERVER_PORT}", flush=True)
+        try:
+            process = subprocess.Popen(
+                [node, str(POT_SERVER_JS), "--port", POT_SERVER_PORT],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+            )
+            assert process.stdout is not None
+            for line in process.stdout:
+                print("[bgutil]", line.rstrip(), flush=True)
+            print(f"PO Token server exited with code {process.wait()}; restarting in 10s", flush=True)
+        except Exception as exc:
+            print(f"PO Token server failed to start: {exc}", flush=True)
+        time.sleep(10)
+
+
 BOT_CHECK_MARKER = "Sign in to confirm"
 # ボット判定された場合に順番に試すクライアント（PO Token不要とされるもの）
 RETRY_CLIENTS = ["android_vr", "web_embedded"]
@@ -367,6 +397,8 @@ class Handler(BaseHTTPRequestHandler):
 
 def main() -> None:
     DOWNLOAD_DIR.mkdir(exist_ok=True)
+    if not MOCK_MODE:
+        threading.Thread(target=run_pot_server, daemon=True).start()
     server = ThreadingHTTPServer((HOST, PORT), Handler)
     browser_url = f"http://127.0.0.1:{PORT}"
     if ACCESS_CODE:

@@ -11,6 +11,7 @@ import threading
 import time
 import uuid
 import webbrowser
+from collections import deque
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -146,9 +147,12 @@ def run_download(job_id: str, url: str, quality: str) -> None:
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
         output_path: Path | None = None
+        output_tail: deque[str] = deque(maxlen=40)
         assert process.stdout is not None
         for raw_line in process.stdout:
             line = raw_line.strip()
+            if line:
+                output_tail.append(line)
             progress_match = re.search(r"\[download\]\s+([\d.]+)%", line)
             if progress_match:
                 progress = min(90, int(float(progress_match.group(1)) * 0.9))
@@ -159,7 +163,10 @@ def run_download(job_id: str, url: str, quality: str) -> None:
                 output_path = Path(line.removeprefix("__OUTPUT__:").strip())
 
         if process.wait() != 0:
-            raise RuntimeError("音声を取得できませんでした。URLや動画の公開状態を確認してください。")
+            print(f"yt-dlp failed for {url}:", "\n".join(output_tail), sep="\n", flush=True)
+            error_line = next((entry for entry in reversed(output_tail) if "ERROR" in entry), "")
+            detail = f"詳細: {error_line[:280]}" if error_line else "URLや動画の公開状態を確認してください。"
+            raise RuntimeError(f"音声を取得できませんでした。{detail}")
 
         if output_path is None or not output_path.exists():
             candidates = sorted(DOWNLOAD_DIR.glob("*.mp3"), key=lambda p: p.stat().st_mtime, reverse=True)

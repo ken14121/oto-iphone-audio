@@ -10,6 +10,7 @@ import shutil
 import subprocess
 import threading
 import time
+import urllib.request
 import uuid
 import webbrowser
 from collections import deque
@@ -264,6 +265,33 @@ class Handler(BaseHTTPRequestHandler):
             return
         if path == "/api/config":
             self.send_json({"requiresAccessCode": bool(ACCESS_CODE)})
+            return
+        if path == "/api/diag":
+            if not self.require_authorization():
+                return
+            diag: dict = {}
+            try:
+                with urllib.request.urlopen("http://127.0.0.1:4416/ping", timeout=5) as response:
+                    diag["pot_server"] = json.loads(response.read().decode("utf-8"))
+            except Exception as exc:
+                diag["pot_server"] = f"error: {exc}"
+            yt_dlp = find_tool("yt-dlp")
+            if yt_dlp:
+                try:
+                    probe = subprocess.run(
+                        [str(yt_dlp), "-v", "--ignore-config", "--simulate", "http://"],
+                        capture_output=True, text=True, timeout=30, cwd=ROOT,
+                    )
+                    header = [
+                        line for line in (probe.stderr or "").splitlines()
+                        if "[debug]" in line or "plugin" in line.lower() or "pot" in line.lower()
+                    ]
+                    diag["ytdlp_debug"] = header[:25]
+                except Exception as exc:
+                    diag["ytdlp_debug"] = f"error: {exc}"
+            else:
+                diag["ytdlp_debug"] = "yt-dlp not found"
+            self.send_json(diag)
             return
         if path.startswith("/api/jobs/"):
             if not self.require_authorization():

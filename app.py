@@ -5,6 +5,7 @@ import hmac
 import mimetypes
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import threading
@@ -93,6 +94,41 @@ def run_mock_job(job_id: str) -> None:
     )
 
 
+BOT_CHECK_MARKER = "Sign in to confirm"
+# ボット判定された場合に順番に試すクライアント（PO Token不要とされるもの）
+RETRY_CLIENTS = ["android_vr", "web_embedded"]
+EXTRA_YTDLP_ARGS = shlex.split(os.environ.get("AUDIO_TOOL_YTDLP_ARGS", ""))
+
+
+def execute_download(job_id: str, command: list[str]) -> tuple[int, list[str], Path | None]:
+    process = subprocess.Popen(
+        command,
+        cwd=ROOT,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+    )
+    output_path: Path | None = None
+    output_tail: deque[str] = deque(maxlen=40)
+    assert process.stdout is not None
+    for raw_line in process.stdout:
+        line = raw_line.strip()
+        if line:
+            output_tail.append(line)
+        progress_match = re.search(r"\[download\]\s+([\d.]+)%", line)
+        if progress_match:
+            progress = min(90, int(float(progress_match.group(1)) * 0.9))
+            update_job(job_id, progress=progress, message="動画から音声を取得しています…")
+        elif line.startswith("[ExtractAudio]"):
+            update_job(job_id, progress=94, message="MP3に変換しています…")
+        elif line.startswith("__OUTPUT__:"):
+            output_path = Path(line.removeprefix("__OUTPUT__:").strip())
+    return process.wait(), list(output_tail), output_path
+
+
 def run_download(job_id: str, url: str, quality: str) -> None:
     if MOCK_MODE:
         run_mock_job(job_id)
@@ -112,7 +148,7 @@ def run_download(job_id: str, url: str, quality: str) -> None:
     quality_map = {"best": "0", "high": "2", "standard": "5"}
     DOWNLOAD_DIR.mkdir(exist_ok=True)
     output_template = str(DOWNLOAD_DIR / "%(title).180B [%(id)s].%(ext)s")
-    command = [
+    base_command = [
         str(yt_dlp),
         "--ignore-config",
         "--no-playlist",
@@ -132,38 +168,26 @@ def run_download(job_id: str, url: str, quality: str) -> None:
         output_template,
         "--print",
         "after_move:__OUTPUT__:%(filepath)s",
-        url,
+        *EXTRA_YTDLP_ARGS,
     ]
+    attempts: list[list[str]] = [[]]
+    attempts.extend([["--extractor-args", f"youtube:player_client={client}"] for client in RETRY_CLIENTS])
 
     try:
-        process = subprocess.Popen(
-            command,
-            cwd=ROOT,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-        )
+        returncode = 1
+        output_tail: list[str] = []
         output_path: Path | None = None
-        output_tail: deque[str] = deque(maxlen=40)
-        assert process.stdout is not None
-        for raw_line in process.stdout:
-            line = raw_line.strip()
-            if line:
-                output_tail.append(line)
-            progress_match = re.search(r"\[download\]\s+([\d.]+)%", line)
-            if progress_match:
-                progress = min(90, int(float(progress_match.group(1)) * 0.9))
-                update_job(job_id, progress=progress, message="動画から音声を取得しています…")
-            elif line.startswith("[ExtractAudio]"):
-                update_job(job_id, progress=94, message="MP3に変換しています…")
-            elif line.startswith("__OUTPUT__:"):
-                output_path = Path(line.removeprefix("__OUTPUT__:").strip())
+        for index, extra_args in enumerate(attempts):
+            returncode, output_tail, output_path = execute_download(job_id, [*base_command, *extra_args, url])
+            if returncode == 0:
+                break
+            print(f"yt-dlp attempt {index + 1} failed for {url}:", "\n".join(output_tail), sep="\n", flush=True)
+            blocked = any(BOT_CHECK_MARKER in line for line in output_tail)
+            if not blocked or index == len(attempts) - 1:
+                break
+            update_job(job_id, progress=2, message="アクセスが制限されたため、別の方法で再試行しています…")
 
-        if process.wait() != 0:
-            print(f"yt-dlp failed for {url}:", "\n".join(output_tail), sep="\n", flush=True)
+        if returncode != 0:
             error_line = next((entry for entry in reversed(output_tail) if "ERROR" in entry), "")
             detail = f"詳細: {error_line[:280]}" if error_line else "URLや動画の公開状態を確認してください。"
             raise RuntimeError(f"音声を取得できませんでした。{detail}")

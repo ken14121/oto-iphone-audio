@@ -97,6 +97,24 @@ def run_mock_job(job_id: str) -> None:
 
 POT_SERVER_JS = Path(os.environ.get("AUDIO_TOOL_POT_SERVER_JS", "/app/bgutil/server/build/main.js"))
 POT_SERVER_PORT = os.environ.get("AUDIO_TOOL_POT_SERVER_PORT", "4416")
+COOKIES_FILE = os.environ.get("AUDIO_TOOL_COOKIES_FILE", "").strip()
+RUNTIME_COOKIES = ROOT / ".cookies-runtime.txt"
+
+
+def prepare_cookies() -> None:
+    """Render のシークレットファイルは読み取り専用のため、書き込み可能な場所へ複製して使う。"""
+    if not COOKIES_FILE:
+        return
+    source = Path(COOKIES_FILE)
+    if not source.exists():
+        print(f"Cookies file not found: {COOKIES_FILE}", flush=True)
+        return
+    shutil.copyfile(source, RUNTIME_COOKIES)
+    print(f"Cookies loaded from {COOKIES_FILE}", flush=True)
+
+
+def cookies_args() -> list[str]:
+    return ["--cookies", str(RUNTIME_COOKIES)] if RUNTIME_COOKIES.exists() else []
 
 
 def run_pot_server() -> None:
@@ -199,6 +217,7 @@ def run_download(job_id: str, url: str, quality: str) -> None:
         output_template,
         "--print",
         "after_move:__OUTPUT__:%(filepath)s",
+        *cookies_args(),
         *EXTRA_YTDLP_ARGS,
     ]
     attempts: list[list[str]] = [[]]
@@ -300,6 +319,8 @@ class Handler(BaseHTTPRequestHandler):
             if not self.require_authorization():
                 return
             diag: dict = {}
+            diag["cookies_configured"] = bool(COOKIES_FILE)
+            diag["cookies_loaded"] = RUNTIME_COOKIES.exists()
             try:
                 with urllib.request.urlopen("http://127.0.0.1:4416/ping", timeout=5) as response:
                     diag["pot_server"] = json.loads(response.read().decode("utf-8"))
@@ -314,6 +335,7 @@ class Handler(BaseHTTPRequestHandler):
                         command += ["--js-runtimes", f"deno:{deno}"]
                     command += [
                         "--extractor-args", "youtubepot-bgutilhttp:base_url=http://127.0.0.1:4416",
+                        *cookies_args(),
                         "https://www.youtube.com/watch?v=aqz-KE-bpKQ",
                     ]
                     probe = subprocess.run(command, capture_output=True, text=True, timeout=120, cwd=ROOT)
@@ -403,6 +425,7 @@ class Handler(BaseHTTPRequestHandler):
 def main() -> None:
     DOWNLOAD_DIR.mkdir(exist_ok=True)
     if not MOCK_MODE:
+        prepare_cookies()
         threading.Thread(target=run_pot_server, daemon=True).start()
     server = ThreadingHTTPServer((HOST, PORT), Handler)
     browser_url = f"http://127.0.0.1:{PORT}"

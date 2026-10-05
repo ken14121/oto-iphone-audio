@@ -140,7 +140,7 @@ function newId() {
 }
 
 function titleFromFilename(filename) {
-  return filename.replace(/\.mp3$/i, "").trim() || "名称未設定";
+  return filename.replace(/\.(mp3|m4a)$/i, "").trim() || "名称未設定";
 }
 
 function formatSize(bytes) {
@@ -507,13 +507,13 @@ async function refreshData() {
 }
 
 async function importBlob(blob, filename) {
-  const looksLikeMp3 = /audio\/(mpeg|mp3)/i.test(blob.type) || /\.mp3$/i.test(filename);
-  if (!looksLikeMp3) throw new Error("MP3ファイルを選んでください");
+  const looksLikeAudio = /audio\/(mpeg|mp3|mp4|x-m4a|aac)/i.test(blob.type) || /\.(mp3|m4a)$/i.test(filename);
+  if (!looksLikeAudio) throw new Error("MP3またはM4Aファイルを選んでください");
   if (!blob.size) throw new Error("空のファイルは保存できません");
 
   const duplicate = tracks.find((track) => track.filename === filename && track.size === blob.size);
   if (duplicate) {
-    showToast("同じMP3はすでに保存されています");
+    showToast("同じ曲はすでに保存されています");
     return duplicate;
   }
 
@@ -551,7 +551,7 @@ async function importFiles(fileList) {
 
 async function importRemote(url, filename) {
   const response = await fetch(url, apiOptions());
-  if (!response.ok) throw new Error("変換したMP3を読み込めませんでした");
+  if (!response.ok) throw new Error("変換した音声を読み込めませんでした");
   return importBlob(await response.blob(), filename);
 }
 
@@ -681,14 +681,15 @@ function beginEdit(track) {
     onSave: async (blob, mode) => {
       if (mode === "replace") {
         if (currentTrackId === track.id) stopPlayback();
-        await saveTrack({ ...track, blob, mime: "audio/mpeg", size: blob.size });
+        const filename = track.filename.replace(/\.(mp3|m4a)$/i, "") + ".mp3";
+        await saveTrack({ ...track, filename, blob, mime: "audio/mpeg", size: blob.size });
         await refreshData();
         showToast("「" + track.title + "」を上書き保存しました");
       } else {
         const copy = {
           id: newId(),
           title: track.title + "（カット済み）",
-          filename: track.filename.replace(/\.mp3$/i, "") + " (cut).mp3",
+          filename: track.filename.replace(/\.(mp3|m4a)$/i, "") + " (cut).mp3",
           mime: "audio/mpeg",
           size: blob.size,
           createdAt: Date.now(),
@@ -751,6 +752,37 @@ function showPlaylistOptions(playlist) {
 
 /* ---------- 変換（MP3ダウンロード） ---------- */
 
+const FORMAT_HINTS = {
+  m4a: "変換せずにそのまま保存するので速く、音質もYouTubeの元のままです。",
+  mp3: "MP3に変換するので、M4Aより時間がかかります。",
+};
+
+function selectedFormat() {
+  const checked = document.querySelector('input[name="format"]:checked');
+  return checked ? checked.value : "m4a";
+}
+
+function renderFormatOptions() {
+  const format = selectedFormat();
+  document.querySelector("#quality-block").hidden = format !== "mp3";
+  document.querySelector("#format-hint").textContent = FORMAT_HINTS[format];
+}
+
+function restoreFormat() {
+  let saved = null;
+  try { saved = localStorage.getItem("oto-format"); } catch (_) { /* Storage unavailable. */ }
+  const input = document.querySelector(`input[name="format"][value="${saved === "mp3" ? "mp3" : "m4a"}"]`);
+  input.checked = true;
+  renderFormatOptions();
+}
+
+document.querySelectorAll('input[name="format"]').forEach((input) => {
+  input.addEventListener("change", () => {
+    try { localStorage.setItem("oto-format", selectedFormat()); } catch (_) { /* Storage unavailable. */ }
+    renderFormatOptions();
+  });
+});
+
 function renderJob(job) {
   const percent = Math.max(0, Math.min(100, job.progress || 0));
   elements.statusBox.hidden = false;
@@ -785,6 +817,7 @@ elements.form.addEventListener("submit", async (event) => {
       body: JSON.stringify({
         url: document.querySelector("#url").value,
         quality: document.querySelector('input[name="quality"]:checked').value,
+        format: selectedFormat(),
         rightsConfirmed: document.querySelector("#rights").checked,
       }),
     }));
@@ -800,6 +833,7 @@ elements.form.addEventListener("submit", async (event) => {
       elements.form.reset();
       elements.accessCode.value = accessCode;
       document.querySelector('input[name="quality"][value="high"]').checked = true;
+      restoreFormat();
     }
   } catch (error) {
     renderJob({ progress: 0, message: error.message || "保存できませんでした", state: "error" });
@@ -1087,6 +1121,7 @@ window.addEventListener("appinstalled", () => showToast("ホーム画面に追�
 
 async function start() {
   updateNetworkStatus();
+  restoreFormat();
   const cachedCode = localStorage.getItem("oto-access-code") || "";
   try {
     const configResponse = await fetch("/api/config", { cache: "no-store" });

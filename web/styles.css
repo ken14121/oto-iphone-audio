@@ -341,6 +341,7 @@ body:not(.is-playing) .bars i { animation: none; height: 4px; }
   text-align: center;
 }
 .quality-options input:checked + span { background: var(--seg-selected); color: var(--text); box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12); }
+.field-hint { margin: 7px 2px 0; color: var(--muted); font-size: 12px; line-height: 1.6; }
 
 .rights-check { display: flex; align-items: flex-start; gap: 9px; margin-bottom: 18px; font-size: 13px; line-height: 1.5; cursor: pointer; }
 .rights-check input { width: 18px; height: 18px; margin: 0; accent-color: var(--accent); flex: none; }

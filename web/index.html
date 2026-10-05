@@ -112,7 +112,7 @@
       <section class="page" data-route="songs">
         <header class="navbar">
           <a class="back" href="#/"><svg><use href="#icon-back" /></svg>ライブラリ</a>
-          <button class="nav-action" id="import-songs" type="button" aria-label="MP3ファイルを追加"><svg><use href="#icon-plus" /></svg></button>
+          <button class="nav-action" id="import-songs" type="button" aria-label="音楽ファイルを追加"><svg><use href="#icon-plus" /></svg></button>
         </header>
         <h1 class="large-title">曲</h1>
         <div class="play-actions" id="songs-actions" hidden>
@@ -122,8 +122,8 @@
         <div class="empty-state" id="songs-empty" hidden>
           <div class="empty-art" aria-hidden="true"><svg><use href="#icon-note" /></svg></div>
           <h3>曲がありません</h3>
-          <p>手元のMP3ファイルを追加するか、MP3ダウンロードから保存してください。</p>
-          <button class="pill-button" id="empty-import" type="button">MP3ファイルを追加</button>
+          <p>手元のMP3・M4Aファイルを追加するか、MP3ダウンロードから保存してください。</p>
+          <button class="pill-button" id="empty-import" type="button">ファイルを追加</button>
           <a class="text-link" href="#/download">MP3ダウンロードへ</a>
         </div>
         <ul class="track-list" id="song-list"></ul>
@@ -188,7 +188,7 @@
           <a class="back" href="#/"><svg><use href="#icon-back" /></svg>ライブラリ</a>
         </header>
         <h1 class="large-title">MP3ダウンロード</h1>
-        <p class="page-meta">権利を持つYouTube動画をMP3にして、この端末のライブラリへ保存します。</p>
+        <p class="page-meta">権利を持つYouTube動画の音声を、この端末のライブラリへ保存します。</p>
 
         <form id="convert-form" class="card">
           <div id="access-panel" class="form-block" hidden>
@@ -202,7 +202,16 @@
           </div>
 
           <fieldset class="form-block">
-            <legend class="field-label">音質</legend>
+            <legend class="field-label">保存形式</legend>
+            <div class="quality-options">
+              <label><input type="radio" name="format" value="m4a" checked /><span>M4A（速い）</span></label>
+              <label><input type="radio" name="format" value="mp3" /><span>MP3</span></label>
+            </div>
+            <p class="field-hint" id="format-hint">変換せずにそのまま保存するので速く、音質もYouTubeの元のままです。</p>
+          </fieldset>
+
+          <fieldset class="form-block" id="quality-block" hidden>
+            <legend class="field-label">MP3の音質</legend>
             <div class="quality-options">
               <label><input type="radio" name="quality" value="best" /><span>最高</span></label>
               <label><input type="radio" name="quality" value="high" checked /><span>高音質</span></label>
@@ -215,7 +224,7 @@
             <span>この動画を変換・利用する権利を持っています</span>
           </label>
 
-          <button id="submit" class="convert-button" type="submit">MP3にして保存</button>
+          <button id="submit" class="convert-button" type="submit">端末に保存</button>
 
           <section id="status" class="status" aria-live="polite" hidden>
             <div class="status-line"><strong id="status-message">準備しています…</strong><span id="status-percent">0%</span></div>
@@ -224,14 +233,14 @@
         </form>
 
         <section class="card">
-          <h2 class="card-title">手元のMP3を追加</h2>
-          <p class="card-text">この端末にあるMP3ファイルを選んで、ライブラリへ保存します。</p>
+          <h2 class="card-title">手元の音楽ファイルを追加</h2>
+          <p class="card-text">この端末にあるMP3・M4Aファイルを選んで、ライブラリへ保存します。</p>
           <button class="pill-button" id="pick-files" type="button">ファイルを選ぶ</button>
         </section>
       </section>
     </main>
 
-    <input id="file-input" type="file" accept="audio/mpeg,audio/mp3,.mp3" multiple hidden />
+    <input id="file-input" type="file" accept="audio/mpeg,audio/mp3,.mp3,audio/mp4,audio/x-m4a,.m4a" multiple hidden />
 
     <!-- ミニプレーヤー -->
     <div class="mini-player" id="mini-player" hidden>

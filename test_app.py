@@ -85,6 +85,27 @@ class AppTests(unittest.TestCase):
             self.assertEqual(response.read(), b"ID3")
             self.assertIn("%E6%97%A5", response.headers["Content-Disposition"])
 
+    def test_rejects_unknown_format(self):
+        with self.assertRaises(urllib.error.HTTPError) as caught:
+            self.request("/api/jobs", {"url": "https://youtu.be/example", "quality": "high", "format": "wav", "rightsConfirmed": True})
+        self.assertEqual(caught.exception.code, 400)
+
+    def test_m4a_keeps_original_audio(self):
+        args = app.audio_args("m4a", "high")
+        self.assertIn("bestaudio[ext=m4a]/bestaudio/best", args)
+        self.assertIn("m4a>m4a/mp3", args)
+        self.assertIn("mp3", app.audio_args("mp3", "best"))
+
+    def test_serves_m4a_with_audio_type(self):
+        app.DOWNLOAD_DIR.mkdir(exist_ok=True)
+        test_file = app.DOWNLOAD_DIR / "m4aテスト.m4a"
+        test_file.write_bytes(b"ftyp")
+        try:
+            with self.request(f"/files/{urllib.parse.quote(test_file.name)}") as response:
+                self.assertEqual(response.headers["Content-Type"], "audio/mp4")
+        finally:
+            test_file.unlink(missing_ok=True)
+
     def test_requires_rights_confirmation(self):
         with self.assertRaises(urllib.error.HTTPError) as caught:
             self.request("/api/jobs", {"url": "https://youtu.be/example", "quality": "high"})

@@ -149,7 +149,24 @@ RETRY_CLIENTS = ["android_vr", "web_embedded"]
 EXTRA_YTDLP_ARGS = shlex.split(os.environ.get("AUDIO_TOOL_YTDLP_ARGS", ""))
 
 
-def execute_download(job_id: str, command: list[str]) -> tuple[int, list[str], Path | None]:
+AUDIO_FORMATS = {"m4a", "mp3"}
+AUDIO_EXTENSIONS = tuple(f".{name}" for name in AUDIO_FORMATS)
+
+
+def audio_args(audio_format: str, quality: str) -> list[str]:
+    """保存形式ごとのyt-dlp引数。M4AはYouTubeの音声(AAC)をそのまま取り出すので再エンコードしない。"""
+    if audio_format == "m4a":
+        # 0.1 CPUの無料インスタンスではMP3エンコードが一番重いので、変換せずに済むM4A音声を優先する。
+        # M4Aが無い動画だけMP3に変換する（Opus→AACの変換はMP3より重いため）。
+        return [
+            "--format", "bestaudio[ext=m4a]/bestaudio/best",
+            "--extract-audio", "--audio-format", "m4a>m4a/mp3", "--audio-quality", "2",
+        ]
+    quality_map = {"best": "0", "high": "2", "standard": "5"}
+    return ["--extract-audio", "--audio-format", "mp3", "--audio-quality", quality_map.get(quality, "2")]
+
+
+def execute_download(job_id: str, command: list[str], audio_format: str = "mp3") -> tuple[int, list[str], Path | None]:
     process = subprocess.Popen(
         command,
         cwd=ROOT,
@@ -172,13 +189,14 @@ def execute_download(job_id: str, command: list[str]) -> tuple[int, list[str], P
             progress = min(90, int(float(progress_match.group(1)) * 0.9))
             update_job(job_id, progress=progress, message="動画から音声を取得しています…")
         elif line.startswith("[ExtractAudio]"):
-            update_job(job_id, progress=94, message="MP3に変換しています…")
+            message = "MP3に変換しています…" if audio_format == "mp3" else "音声を仕上げています…"
+            update_job(job_id, progress=94, message=message)
         elif line.startswith("__OUTPUT__:"):
             output_path = Path(line.removeprefix("__OUTPUT__:").strip())
     return process.wait(), list(output_tail), output_path
 
 
-def run_download(job_id: str, url: str, quality: str) -> None:
+def run_download(job_id: str, url: str, quality: str, audio_format: str = "mp3") -> None:
     if MOCK_MODE:
         run_mock_job(job_id)
         return
@@ -194,8 +212,8 @@ def run_download(job_id: str, url: str, quality: str) -> None:
         )
         return
 
-    quality_map = {"best": "0", "high": "2", "standard": "5"}
     DOWNLOAD_DIR.mkdir(exist_ok=True)
+    started = time.monotonic()
     output_template = str(DOWNLOAD_DIR / "%(title).180B [%(id)s].%(ext)s")
     base_command = [
         str(yt_dlp),
@@ -205,11 +223,7 @@ def run_download(job_id: str, url: str, quality: str) -> None:
         "--windows-filenames",
         "--js-runtimes",
         f"deno:{deno}",
-        "--extract-audio",
-        "--audio-format",
-        "mp3",
-        "--audio-quality",
-        quality_map.get(quality, "2"),
+        *audio_args(audio_format, quality),
         "--embed-metadata",
         "--ffmpeg-location",
         str(ffmpeg.parent),
@@ -228,7 +242,7 @@ def run_download(job_id: str, url: str, quality: str) -> None:
         output_tail: list[str] = []
         output_path: Path | None = None
         for index, extra_args in enumerate(attempts):
-            returncode, output_tail, output_path = execute_download(job_id, [*base_command, *extra_args, url])
+            returncode, output_tail, output_path = execute_download(job_id, [*base_command, *extra_args, url], audio_format)
             if returncode == 0:
                 break
             print(f"yt-dlp attempt {index + 1} failed for {url}:", "\n".join(output_tail), sep="\n", flush=True)
@@ -249,10 +263,15 @@ def run_download(job_id: str, url: str, quality: str) -> None:
             raise RuntimeError(f"音声を取得できませんでした。{detail}")
 
         if output_path is None or not output_path.exists():
-            candidates = sorted(DOWNLOAD_DIR.glob("*.mp3"), key=lambda p: p.stat().st_mtime, reverse=True)
+            candidates = sorted(
+                (p for p in DOWNLOAD_DIR.iterdir() if p.suffix.lower() in AUDIO_EXTENSIONS),
+                key=lambda p: p.stat().st_mtime,
+                reverse=True,
+            )
             output_path = candidates[0] if candidates else None
         if output_path is None:
-            raise RuntimeError("変換後のMP3ファイルを確認できませんでした。")
+            raise RuntimeError("変換後の音声ファイルを確認できませんでした。")
+        print(f"Job {job_id} finished in {time.monotonic() - started:.1f}s ({audio_format}, {url})", flush=True)
 
         update_job(
             job_id,
@@ -378,7 +397,7 @@ class Handler(BaseHTTPRequestHandler):
                 return
             file_size = file_path.stat().st_size
             self.send_response(HTTPStatus.OK)
-            self.send_header("Content-Type", "audio/mpeg")
+            self.send_header("Content-Type", mimetypes.guess_type(filename)[0] or "application/octet-stream")
             self.send_header("Content-Disposition", f"attachment; filename*=UTF-8''{quote(filename, safe='')}")
             self.send_header("Content-Length", str(file_size))
             self.send_header("X-Content-Type-Options", "nosniff")
@@ -405,6 +424,7 @@ class Handler(BaseHTTPRequestHandler):
             payload = json.loads(self.rfile.read(length).decode("utf-8"))
             url = str(payload.get("url", "")).strip()
             quality = str(payload.get("quality", "high"))
+            audio_format = str(payload.get("format", "mp3"))
             rights_confirmed = payload.get("rightsConfirmed") is True
         except (ValueError, json.JSONDecodeError):
             self.send_json({"error": "入力内容を読み取れませんでした"}, HTTPStatus.BAD_REQUEST)
@@ -419,12 +439,15 @@ class Handler(BaseHTTPRequestHandler):
         if quality not in {"best", "high", "standard"}:
             self.send_json({"error": "音質の指定が正しくありません"}, HTTPStatus.BAD_REQUEST)
             return
+        if audio_format not in AUDIO_FORMATS:
+            self.send_json({"error": "保存形式の指定が正しくありません"}, HTTPStatus.BAD_REQUEST)
+            return
 
         job_id = uuid.uuid4().hex
         job = {"id": job_id, "state": "working", "progress": 2, "message": "準備しています…"}
         with JOBS_LOCK:
             JOBS[job_id] = job
-        threading.Thread(target=run_download, args=(job_id, url, quality), daemon=True).start()
+        threading.Thread(target=run_download, args=(job_id, url, quality, audio_format), daemon=True).start()
         self.send_json(public_job(job), HTTPStatus.ACCEPTED)
 
 

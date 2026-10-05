@@ -53,6 +53,7 @@ const elements = {
   npArt: document.querySelector("#np-art"),
   npTitle: document.querySelector("#np-title"),
   npState: document.querySelector("#np-state"),
+  npMore: document.querySelector("#np-more"),
   audio: document.querySelector("#audio"),
   playPause: document.querySelector("#play-pause"),
   previous: document.querySelector("#previous"),
@@ -886,6 +887,10 @@ elements.dialogForm.addEventListener("submit", (event) => {
 
 elements.miniOpen.addEventListener("click", openNowPlaying);
 elements.npClose.addEventListener("click", closeNowPlaying);
+elements.npMore.addEventListener("click", () => {
+  const track = tracks.find((candidate) => candidate.id === currentTrackId);
+  if (track) showTrackOptions(track);
+});
 elements.miniPlay.addEventListener("click", togglePlayback);
 elements.miniNext.addEventListener("click", () => adjacentTrack(1));
 elements.playPause.addEventListener("click", togglePlayback);
@@ -906,7 +911,6 @@ elements.audio.addEventListener("timeupdate", () => {
   if (!seekDrag) renderSeek(elements.audio.currentTime);
 });
 elements.audio.addEventListener("loadedmetadata", () => {
-  elements.duration.textContent = formatTime(elements.audio.duration);
   renderSeek(elements.audio.currentTime);
 });
 elements.audio.addEventListener("ended", () => adjacentTrack(1));
@@ -920,6 +924,7 @@ function renderSeek(seconds) {
   elements.seek.setAttribute("aria-valuenow", String(Math.round(ratio * 100)));
   elements.seek.setAttribute("aria-valuetext", formatTime(seconds));
   elements.currentTime.textContent = formatTime(seconds);
+  elements.duration.textContent = "−" + formatTime(duration ? Math.max(0, duration - Math.floor(seconds)) : 0);
 }
 
 function seekTimeAt(clientX) {
@@ -981,8 +986,9 @@ elements.nowPlaying.addEventListener("touchmove", (event) => {
   const dx = touch.clientX - sheetSwipe.x;
   const dy = touch.clientY - sheetSwipe.y;
   if (!sheetSwipe.locked) {
-    if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
-    if (dy <= 0 || Math.abs(dx) > dy) {
+    // 少し指がずれたタップを「閉じる操作」と取り違えないよう、はっきり下へ動いたときだけ反応する
+    if (Math.abs(dx) < 12 && Math.abs(dy) < 12) return;
+    if (dy <= 0 || Math.abs(dx) * 1.5 > dy) {
       sheetSwipe = null;
       return;
     }

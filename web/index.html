@@ -50,6 +50,14 @@
         <path d="M19.5 6.6v10.8c0 .9-1 1.4-1.7 1l-8.1-5.4c-.7-.5-.7-1.5 0-2l8.1-5.4c.7-.4 1.7.1 1.7 1z" fill="currentColor" />
         <rect x="4.5" y="5.5" width="2.9" height="13" rx="1.2" fill="currentColor" />
       </symbol>
+      <symbol id="icon-rewind" viewBox="0 0 32 24">
+        <path d="M15 5.2v13.6c0 .9-1 1.4-1.7.9L3.6 13c-.7-.5-.7-1.5 0-2l9.7-6.7c.7-.5 1.7 0 1.7.9z" fill="currentColor" />
+        <path d="M29 5.2v13.6c0 .9-1 1.4-1.7.9L17.6 13c-.7-.5-.7-1.5 0-2l9.7-6.7c.7-.5 1.7 0 1.7.9z" fill="currentColor" />
+      </symbol>
+      <symbol id="icon-forward" viewBox="0 0 32 24">
+        <path d="M3 5.2v13.6c0 .9 1 1.4 1.7.9l9.7-6.7c.7-.5.7-1.5 0-2L4.7 4.3C4 3.8 3 4.3 3 5.2z" fill="currentColor" />
+        <path d="M17 5.2v13.6c0 .9 1 1.4 1.7.9l9.7-6.7c.7-.5.7-1.5 0-2l-9.7-6.7c-.7-.5-1.7 0-1.7.9z" fill="currentColor" />
+      </symbol>
       <symbol id="icon-shuffle" viewBox="0 0 24 24">
         <path d="M3 7h3.8l10 10H21M3 17h3.8m6.4-6.6L16.8 7H21" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
         <path d="M18.6 4.4L21.2 7l-2.6 2.6M18.6 14.4L21.2 17l-2.6 2.6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
@@ -258,24 +266,29 @@
     <!-- 再生画面 -->
     <section class="now-playing" id="now-playing" aria-label="再生画面" aria-hidden="true">
       <button class="np-grabber" id="np-close" type="button" aria-label="再生画面を閉じる"></button>
-      <div class="np-art" id="np-art" aria-hidden="true">♪</div>
+      <div class="np-art-wrap">
+        <div class="np-art" id="np-art" aria-hidden="true">♪</div>
+      </div>
       <div class="np-info">
-        <strong id="np-title">曲名</strong>
-        <span id="np-state">オフライン保存済み</span>
+        <div class="np-text">
+          <strong id="np-title">曲名</strong>
+          <span id="np-state">オフライン保存済み</span>
+        </div>
+        <button class="np-more" id="np-more" type="button" aria-label="この曲の操作"><svg><use href="#icon-more" /></svg></button>
       </div>
       <div class="np-timeline">
         <div class="np-seek" id="seek" role="slider" tabindex="0" aria-label="再生位置" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
           <div class="np-seek-track" id="seek-track"><div class="np-seek-fill" id="seek-fill"></div></div>
         </div>
-        <div class="np-times"><span id="current-time">0:00</span><span id="duration">0:00</span></div>
+        <div class="np-times"><span id="current-time">0:00</span><span id="duration">−0:00</span></div>
       </div>
       <div class="np-controls">
-        <button id="previous" type="button" aria-label="前の曲"><svg><use href="#icon-prev" /></svg></button>
+        <button id="previous" type="button" aria-label="前の曲"><svg class="np-skip"><use href="#icon-rewind" /></svg></button>
         <button id="play-pause" class="np-play" type="button" aria-label="再生 / 一時停止">
           <svg class="icon-play-state icon-play"><use href="#icon-play" /></svg>
           <svg class="icon-play-state icon-pause"><use href="#icon-pause" /></svg>
         </button>
-        <button id="next" type="button" aria-label="次の曲"><svg><use href="#icon-next" /></svg></button>
+        <button id="next" type="button" aria-label="次の曲"><svg class="np-skip"><use href="#icon-forward" /></svg></button>
       </div>
     </section>
 

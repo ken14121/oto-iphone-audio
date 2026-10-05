@@ -255,7 +255,9 @@
         <span id="np-state">オフライン保存済み</span>
       </div>
       <div class="np-timeline">
-        <input id="seek" type="range" min="0" max="100" value="0" step="0.1" aria-label="再生位置" />
+        <div class="np-seek" id="seek" role="slider" tabindex="0" aria-label="再生位置" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+          <div class="np-seek-track" id="seek-track"><div class="np-seek-fill" id="seek-fill"></div></div>
+        </div>
         <div class="np-times"><span id="current-time">0:00</span><span id="duration">0:00</span></div>
       </div>
       <div class="np-controls">

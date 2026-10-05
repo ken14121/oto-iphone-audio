@@ -58,6 +58,8 @@ const elements = {
   previous: document.querySelector("#previous"),
   next: document.querySelector("#next"),
   seek: document.querySelector("#seek"),
+  seekTrack: document.querySelector("#seek-track"),
+  seekFill: document.querySelector("#seek-fill"),
   currentTime: document.querySelector("#current-time"),
   duration: document.querySelector("#duration"),
   sheetBackdrop: document.querySelector("#sheet-backdrop"),
@@ -84,6 +86,8 @@ let toastTimer = null;
 let requiresAccessCode = false;
 let currentRoute = null;
 let dialogSubmit = null;
+let seekDrag = null;
+let currentHash = null;
 
 /* ---------- IndexedDB ---------- */
 
@@ -213,6 +217,12 @@ function renderRoute(animate = true) {
     }
   });
   currentRoute = route;
+  // 各履歴エントリに「どのページから来たか」を一度だけ記録し、スワイプで戻るときに使う。
+  const hash = location.hash || "#/";
+  if (!(history.state && "prev" in history.state)) {
+    history.replaceState({ prev: changed && currentHash ? currentHash : "" }, "");
+  }
+  currentHash = hash;
   closeActionSheet();
   closeDialog();
   renderPage();
@@ -859,16 +869,182 @@ elements.audio.addEventListener("pause", () => {
   if ("mediaSession" in navigator) navigator.mediaSession.playbackState = "paused";
 });
 elements.audio.addEventListener("timeupdate", () => {
-  elements.currentTime.textContent = formatTime(elements.audio.currentTime);
-  elements.seek.value = elements.audio.duration ? String(elements.audio.currentTime / elements.audio.duration * 100) : "0";
+  if (!seekDrag) renderSeek(elements.audio.currentTime);
 });
 elements.audio.addEventListener("loadedmetadata", () => {
   elements.duration.textContent = formatTime(elements.audio.duration);
+  renderSeek(elements.audio.currentTime);
 });
 elements.audio.addEventListener("ended", () => adjacentTrack(1));
-elements.seek.addEventListener("input", () => {
-  if (elements.audio.duration) elements.audio.currentTime = Number(elements.seek.value) / 100 * elements.audio.duration;
+
+/* ---------- シークバー ---------- */
+
+function renderSeek(seconds) {
+  const duration = elements.audio.duration;
+  const ratio = duration ? Math.min(1, Math.max(0, seconds / duration)) : 0;
+  elements.seekFill.style.width = ratio * 100 + "%";
+  elements.seek.setAttribute("aria-valuenow", String(Math.round(ratio * 100)));
+  elements.seek.setAttribute("aria-valuetext", formatTime(seconds));
+  elements.currentTime.textContent = formatTime(seconds);
+}
+
+function seekTimeAt(clientX) {
+  const rect = elements.seekTrack.getBoundingClientRect();
+  const ratio = rect.width ? Math.min(1, Math.max(0, (clientX - rect.left) / rect.width)) : 0;
+  return ratio * elements.audio.duration;
+}
+
+function endSeekDrag(commit) {
+  if (!seekDrag) return;
+  if (commit) elements.audio.currentTime = seekDrag.time;
+  seekDrag = null;
+  elements.seek.classList.remove("dragging");
+  elements.nowPlaying.classList.remove("seeking");
+  renderSeek(elements.audio.currentTime);
+}
+
+// 線の上下にも広いタッチ範囲を取り、触れた位置へすぐ追従させ、指を離したときに確定する。
+elements.seek.addEventListener("pointerdown", (event) => {
+  if (!elements.audio.duration || (event.pointerType === "mouse" && event.button !== 0)) return;
+  event.preventDefault();
+  try { elements.seek.setPointerCapture(event.pointerId); } catch (_) { /* Synthetic pointer. */ }
+  seekDrag = { pointerId: event.pointerId, time: seekTimeAt(event.clientX) };
+  elements.seek.classList.add("dragging");
+  elements.nowPlaying.classList.add("seeking");
+  renderSeek(seekDrag.time);
 });
+elements.seek.addEventListener("pointermove", (event) => {
+  if (!seekDrag || event.pointerId !== seekDrag.pointerId) return;
+  seekDrag.time = seekTimeAt(event.clientX);
+  renderSeek(seekDrag.time);
+});
+elements.seek.addEventListener("pointerup", (event) => {
+  if (seekDrag && event.pointerId === seekDrag.pointerId) endSeekDrag(true);
+});
+elements.seek.addEventListener("pointercancel", () => endSeekDrag(false));
+elements.seek.addEventListener("keydown", (event) => {
+  const step = { ArrowLeft: -5, ArrowDown: -5, ArrowRight: 5, ArrowUp: 5 }[event.key];
+  if (!step || !elements.audio.duration) return;
+  event.preventDefault();
+  elements.audio.currentTime = Math.min(elements.audio.duration, Math.max(0, elements.audio.currentTime + step));
+  renderSeek(elements.audio.currentTime);
+});
+
+/* ---------- スワイプ操作 ---------- */
+
+// 再生画面: 下へスワイプで閉じる
+let sheetSwipe = null;
+
+elements.nowPlaying.addEventListener("touchstart", (event) => {
+  if (event.touches.length !== 1 || event.target.closest(".np-seek")) return;
+  const touch = event.touches[0];
+  sheetSwipe = { x: touch.clientX, y: touch.clientY, time: event.timeStamp, dy: 0, locked: false };
+}, { passive: true });
+
+elements.nowPlaying.addEventListener("touchmove", (event) => {
+  if (!sheetSwipe) return;
+  const touch = event.touches[0];
+  const dx = touch.clientX - sheetSwipe.x;
+  const dy = touch.clientY - sheetSwipe.y;
+  if (!sheetSwipe.locked) {
+    if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
+    if (dy <= 0 || Math.abs(dx) > dy) {
+      sheetSwipe = null;
+      return;
+    }
+    sheetSwipe.locked = true;
+    elements.nowPlaying.classList.add("dragging");
+  }
+  event.preventDefault();
+  sheetSwipe.dy = Math.max(0, dy);
+  elements.nowPlaying.style.transform = `translateY(${sheetSwipe.dy}px)`;
+}, { passive: false });
+
+function finishSheetSwipe(event) {
+  if (!sheetSwipe) return;
+  const swipe = sheetSwipe;
+  sheetSwipe = null;
+  if (!swipe.locked) return;
+  const velocity = swipe.dy / Math.max(1, event.timeStamp - swipe.time);
+  const shouldClose = event.type === "touchend" && (swipe.dy > window.innerHeight * 0.18 || (velocity > 0.5 && swipe.dy > 40));
+  elements.nowPlaying.classList.remove("dragging");
+  elements.nowPlaying.style.transform = "";
+  if (shouldClose) closeNowPlaying();
+}
+elements.nowPlaying.addEventListener("touchend", finishSheetSwipe);
+elements.nowPlaying.addEventListener("touchcancel", finishSheetSwipe);
+
+// 各ページ: 画面の左端から右へスワイプで1つ前に戻る
+const EDGE_WIDTH = 32;
+let edgeSwipe = null;
+
+function overlayOpen() {
+  return document.body.classList.contains("np-open")
+    || document.body.classList.contains("editor-open")
+    || !elements.sheetBackdrop.hidden
+    || !elements.dialogBackdrop.hidden;
+}
+
+document.addEventListener("touchstart", (event) => {
+  if (event.touches.length !== 1 || overlayOpen() || !currentRoute) return;
+  const touch = event.touches[0];
+  if (touch.clientX > EDGE_WIDTH) return;
+  const page = document.querySelector(".page.is-active");
+  const back = page && page.querySelector(".navbar .back");
+  if (!back) return;
+  edgeSwipe = { page, href: back.getAttribute("href"), width: document.documentElement.clientWidth, x: touch.clientX, y: touch.clientY, time: event.timeStamp, dx: 0, locked: false };
+}, { passive: true });
+
+document.addEventListener("touchmove", (event) => {
+  if (!edgeSwipe) return;
+  const touch = event.touches[0];
+  const dx = touch.clientX - edgeSwipe.x;
+  const dy = touch.clientY - edgeSwipe.y;
+  if (!edgeSwipe.locked) {
+    if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
+    if (dx <= 0 || Math.abs(dy) > dx) {
+      edgeSwipe = null;
+      return;
+    }
+    edgeSwipe.locked = true;
+    edgeSwipe.page.classList.remove("anim-fwd", "anim-back", "swipe-release");
+    edgeSwipe.page.classList.add("swiping");
+  }
+  event.preventDefault();
+  edgeSwipe.dx = Math.max(0, dx);
+  edgeSwipe.page.style.transform = `translateX(${edgeSwipe.dx}px)`;
+}, { passive: false });
+
+function finishEdgeSwipe(event) {
+  if (!edgeSwipe) return;
+  const swipe = edgeSwipe;
+  edgeSwipe = null;
+  if (!swipe.locked) return;
+  const velocity = swipe.dx / Math.max(1, event.timeStamp - swipe.time);
+  const shouldGoBack = event.type === "touchend" && (swipe.dx > swipe.width * 0.3 || (velocity > 0.4 && swipe.dx > 40));
+  const { page } = swipe;
+  page.classList.add("swipe-release");
+  page.style.transform = shouldGoBack ? "translateX(100%)" : "";
+  const reset = () => {
+    page.classList.remove("swiping", "swipe-release");
+    page.style.transform = "";
+  };
+  setTimeout(() => {
+    if (!shouldGoBack) {
+      reset();
+    } else if (history.state && history.state.prev === swipe.href) {
+      // 直前の履歴が戻り先なら履歴を戻す（Safariの戻る操作とも食い違わない）
+      window.addEventListener("hashchange", reset, { once: true });
+      history.back();
+    } else {
+      location.hash = swipe.href;
+      renderRoute();
+      reset();
+    }
+  }, 220);
+}
+document.addEventListener("touchend", finishEdgeSwipe);
+document.addEventListener("touchcancel", finishEdgeSwipe);
 
 if ("mediaSession" in navigator) {
   const handlers = {

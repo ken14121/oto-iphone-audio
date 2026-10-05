@@ -1,4 +1,4 @@
-const CACHE_NAME = "oto-shell-v7";
+const CACHE_NAME = "oto-shell-v8";
 const APP_SHELL = [
   "/",
   "/index.html",

@@ -238,6 +238,12 @@ def run_download(job_id: str, url: str, quality: str) -> None:
             update_job(job_id, progress=2, message="アクセスが制限されたため、別の方法で再試行しています…")
 
         if returncode != 0:
+            if any(BOT_CHECK_MARKER in line for line in output_tail):
+                if RUNTIME_COOKIES.exists():
+                    hint = "設定済みのCookieが期限切れの可能性があります。予備アカウントでCookieを書き出し直して、RenderのSecret Filesを更新してください。"
+                else:
+                    hint = "サーバーにCookieが設定されていません。READMEの「ボット確認でブロックされる場合」の手順でCookieを設定してください。"
+                raise RuntimeError(f"YouTubeにボット確認でブロックされました。{hint}")
             error_line = next((entry for entry in reversed(output_tail) if "ERROR" in entry), "")
             detail = f"詳細: {error_line[:280]}" if error_line else "URLや動画の公開状態を確認してください。"
             raise RuntimeError(f"音声を取得できませんでした。{detail}")

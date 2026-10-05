@@ -140,8 +140,16 @@ function newId() {
   return globalThis.crypto && crypto.randomUUID ? crypto.randomUUID() : Date.now() + "-" + Math.random();
 }
 
+// ダウンロードしたファイル名は「曲名 [動画ID].m4a」の形なので、動画IDを取り出してタイトルからは外す
+const VIDEO_ID_IN_NAME = /\s*\[([A-Za-z0-9_-]{11})\]/;
+
 function titleFromFilename(filename) {
-  return filename.replace(/\.(mp3|m4a)$/i, "").trim() || "名称未設定";
+  return filename.replace(/\.(mp3|m4a)$/i, "").replace(VIDEO_ID_IN_NAME, "").trim() || "名称未設定";
+}
+
+function videoIdFromFilename(filename) {
+  const match = String(filename || "").match(VIDEO_ID_IN_NAME);
+  return match ? match[1] : null;
 }
 
 function formatSize(bytes) {
@@ -164,6 +172,79 @@ function artGradient(seed) {
   let hash = 0;
   for (const ch of String(seed)) hash = (hash * 31 + ch.codePointAt(0)) % 360;
   return `linear-gradient(135deg, hsl(${hash} 72% 60%), hsl(${(hash + 55) % 360} 70% 42%))`;
+}
+
+/* ---------- アートワーク ---------- */
+
+const artworkUrls = new Map();
+
+function artworkUrl(track) {
+  if (!track || !track.artwork) return null;
+  let entry = artworkUrls.get(track.id);
+  if (!entry || entry.size !== track.artwork.size) {
+    if (entry) URL.revokeObjectURL(entry.url);
+    entry = { size: track.artwork.size, url: URL.createObjectURL(track.artwork) };
+    artworkUrls.set(track.id, entry);
+  }
+  return entry.url;
+}
+
+function forgetArtwork(id) {
+  const entry = artworkUrls.get(id);
+  if (entry) URL.revokeObjectURL(entry.url);
+  artworkUrls.delete(id);
+}
+
+// サムネイルがあれば画像を、なければこれまでどおりグラデーション＋♪を描く
+function paintArt(el, track, seed = track.title) {
+  const url = artworkUrl(track);
+  el.classList.toggle("has-artwork", Boolean(url));
+  el.style.background = url ? `center / cover no-repeat url("${url}")` : artGradient(seed);
+  if (url) el.replaceChildren();
+  else el.textContent = "♪";
+}
+
+async function fetchArtwork(videoId) {
+  const response = await fetch("/api/thumbnail/" + encodeURIComponent(videoId), apiOptions());
+  if (!response.ok) throw new Error("thumbnail " + response.status);
+  return response.blob();
+}
+
+async function attachArtwork(track) {
+  const videoId = track.videoId || videoIdFromFilename(track.filename);
+  if (!videoId) return false;
+  const artwork = await fetchArtwork(videoId);
+  const latest = tracks.find((candidate) => candidate.id === track.id) || track;
+  await saveTrack({ ...latest, videoId, artwork, title: latest.title.replace(VIDEO_ID_IN_NAME, "").trim() || latest.title });
+  return true;
+}
+
+let backfillRunning = false;
+
+// 以前に保存した曲にも、ファイル名に動画IDがあればサムネイルを付ける
+async function backfillArtwork() {
+  if (backfillRunning || !navigator.onLine) return;
+  backfillRunning = true;
+  let changed = false;
+  try {
+    for (const track of tracks.filter((t) => !t.artwork && (t.videoId || videoIdFromFilename(t.filename)))) {
+      try {
+        if (await attachArtwork(track)) changed = true;
+      } catch (_) {
+        // サーバー休止中・オフラインなどは次回起動時に再挑戦する
+      }
+    }
+  } finally {
+    backfillRunning = false;
+    if (changed) {
+      await refreshData();
+      const current = tracks.find((t) => t.id === currentTrackId);
+      if (current) {
+        updateNowPlayingInfo(current);
+        updateMediaSession(current);
+      }
+    }
+  }
 }
 
 function iconSvg(name) {
@@ -261,8 +342,7 @@ function createRecentTile(track) {
   tile.className = "recent-tile";
   const art = document.createElement("span");
   art.className = "recent-art";
-  art.style.background = artGradient(track.title);
-  art.textContent = "♪";
+  paintArt(art, track);
   const name = document.createElement("span");
   name.className = "recent-name";
   name.textContent = track.title;
@@ -292,8 +372,7 @@ function createTrackRow(track, { onPlay, onOptions, subtitle }) {
 
   const art = document.createElement("span");
   art.className = "track-art";
-  art.style.background = artGradient(track.title);
-  art.textContent = "♪";
+  paintArt(art, track);
 
   const text = document.createElement("span");
   text.className = "track-text";
@@ -346,8 +425,13 @@ function createPlaylistRow(playlist) {
 
   const art = document.createElement("span");
   art.className = "playlist-art";
-  art.style.background = artGradient(playlist.name + playlist.id);
-  art.append(iconSvg("playlist"));
+  const cover = playlistTracks(playlist).find((t) => t.artwork);
+  if (cover) {
+    paintArt(art, cover);
+  } else {
+    art.style.background = artGradient(playlist.name + playlist.id);
+    art.append(iconSvg("playlist"));
+  }
 
   const text = document.createElement("span");
   text.className = "playlist-text";
@@ -429,11 +513,10 @@ async function playTrack(id, autoplay = true) {
 }
 
 function updateNowPlayingInfo(track) {
-  const gradient = artGradient(track.title);
   elements.miniTitle.textContent = track.title;
-  elements.miniArt.style.background = gradient;
+  paintArt(elements.miniArt, track);
   elements.npTitle.textContent = track.title;
-  elements.npArt.style.background = gradient;
+  paintArt(elements.npArt, track);
   elements.npState.textContent = "オフライン保存済み";
   elements.miniPlayer.hidden = false;
 }
@@ -481,7 +564,9 @@ function updateMediaSession(track) {
     title: track.title,
     artist: "OTO オフラインライブラリ",
     album: "この端末に保存済み",
-    artwork: [{ src: "/icon.svg", sizes: "any", type: "image/svg+xml" }],
+    artwork: artworkUrl(track)
+      ? [{ src: artworkUrl(track), sizes: "1280x720", type: track.artwork.type || "image/jpeg" }]
+      : [{ src: "/icon.svg", sizes: "any", type: "image/svg+xml" }],
   });
 }
 
@@ -526,6 +611,7 @@ async function importBlob(blob, filename) {
   const track = {
     id: newId(),
     title: titleFromFilename(filename),
+    videoId: videoIdFromFilename(filename),
     filename,
     mime: blob.type || "audio/mpeg",
     size: blob.size,
@@ -536,6 +622,12 @@ async function importBlob(blob, filename) {
   await persistStorage();
   await refreshData();
   showToast("「" + track.title + "」をオフライン保存しました");
+  if (track.videoId) {
+    try {
+      await attachArtwork(track);
+      await refreshData();
+    } catch (_) { /* サムネイルが無くても曲の保存は完了している */ }
+  }
   return track;
 }
 
@@ -567,6 +659,7 @@ async function deleteTrack(id) {
   if (!confirm("「" + track.title + "」をこの端末から削除しますか？")) return;
   if (currentTrackId === id) stopPlayback();
   await removeTrackRecord(id);
+  forgetArtwork(id);
   for (const playlist of playlists) {
     if (playlist.trackIds.includes(id)) {
       playlist.trackIds = playlist.trackIds.filter((trackId) => trackId !== id);
@@ -695,6 +788,8 @@ function beginEdit(track) {
         const copy = {
           id: newId(),
           title: track.title + "（カット済み）",
+          videoId: track.videoId,
+          artwork: track.artwork,
           filename: track.filename.replace(/\.(mp3|m4a)$/i, "") + " (cut).mp3",
           mime: "audio/mpeg",
           size: blob.size,
@@ -1111,7 +1206,10 @@ function updateNetworkStatus() {
   elements.networkBadge.classList.toggle("offline", !online);
   elements.networkBadge.querySelector("span").textContent = online ? "オンライン" : "オフライン再生OK";
 }
-window.addEventListener("online", updateNetworkStatus);
+window.addEventListener("online", () => {
+  updateNetworkStatus();
+  backfillArtwork();
+});
 window.addEventListener("offline", updateNetworkStatus);
 
 window.addEventListener("beforeinstallprompt", (event) => {
@@ -1157,6 +1255,7 @@ async function start() {
   loadServerConfig(cachedCode);
   await refreshData();
   renderRoute(false);
+  backfillArtwork();
   if ("serviceWorker" in navigator) {
     try { await navigator.serviceWorker.register("/service-worker.js"); } catch (_) { showToast("オフライン機能を準備できませんでした"); }
   }

@@ -285,6 +285,24 @@ def run_download(job_id: str, url: str, quality: str, audio_format: str = "mp3")
         update_job(job_id, state="error", message=str(exc))
 
 
+VIDEO_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{11}$")
+# 高画質(1280x720)が無い動画もあるので、必ずある16:9の中画質(320x180)へ順に落とす
+THUMBNAIL_NAMES = ("maxresdefault.jpg", "mqdefault.jpg")
+
+
+def fetch_thumbnail(video_id: str) -> tuple[bytes, str] | None:
+    """YouTubeのサムネイル画像を取得する。端末から直接はCORSで読めないためサーバーが中継する。"""
+    if MOCK_MODE:
+        return (WEB_DIR / "icon.svg").read_bytes(), "image/svg+xml"
+    for name in THUMBNAIL_NAMES:
+        try:
+            with urllib.request.urlopen(f"https://i.ytimg.com/vi/{video_id}/{name}", timeout=10) as response:
+                return response.read(), response.headers.get_content_type() or "image/jpeg"
+        except Exception:
+            continue
+    return None
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "OfflineAudioPWA/2.0"
 
@@ -374,6 +392,26 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 diag["ytdlp_probe"] = "yt-dlp not found"
             self.send_json(diag)
+            return
+        if path.startswith("/api/thumbnail/"):
+            if not self.require_authorization():
+                return
+            video_id = path.removeprefix("/api/thumbnail/")
+            if not VIDEO_ID_PATTERN.match(video_id):
+                self.send_json({"error": "動画IDが正しくありません"}, HTTPStatus.BAD_REQUEST)
+                return
+            thumbnail = fetch_thumbnail(video_id)
+            if thumbnail is None:
+                self.send_json({"error": "サムネイルが見つかりません"}, HTTPStatus.NOT_FOUND)
+                return
+            data, content_type = thumbnail
+            self.send_response(HTTPStatus.OK)
+            self.send_header("Content-Type", content_type)
+            self.send_header("Content-Length", str(len(data)))
+            self.send_header("Cache-Control", "private, max-age=86400")
+            self.send_header("X-Content-Type-Options", "nosniff")
+            self.end_headers()
+            self.wfile.write(data)
             return
         if path.startswith("/api/jobs/"):
             if not self.require_authorization():

@@ -106,6 +106,14 @@ class AppTests(unittest.TestCase):
         finally:
             test_file.unlink(missing_ok=True)
 
+    def test_thumbnail_proxy(self):
+        with self.request("/api/thumbnail/dQw4w9WgXcQ") as response:
+            self.assertTrue(response.headers["Content-Type"].startswith("image/"))
+            self.assertTrue(response.read())
+        with self.assertRaises(urllib.error.HTTPError) as caught:
+            self.request("/api/thumbnail/..%2Fsecret")
+        self.assertEqual(caught.exception.code, 400)
+
     def test_requires_rights_confirmation(self):
         with self.assertRaises(urllib.error.HTTPError) as caught:
             self.request("/api/jobs", {"url": "https://youtu.be/example", "quality": "high"})

@@ -174,7 +174,7 @@ svg { display: block; }
   grid-template-columns: repeat(auto-fill, minmax(102px, 1fr));
   gap: 16px 14px;
 }
-.recent-tile { padding: 0; border: 0; background: none; text-align: left; min-width: 0; }
+.recent-tile { align-self: start; padding: 0; border: 0; background: none; text-align: left; min-width: 0; }
 .recent-art {
   display: grid;
   place-items: center;

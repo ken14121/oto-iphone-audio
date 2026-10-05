@@ -149,6 +149,11 @@ function formatSize(bytes) {
   return (bytes / 1024 / 1024).toFixed(bytes < 10 * 1024 * 1024 ? 1 : 0) + " MB";
 }
 
+function trackFormat(track) {
+  if (/\.m4a$/i.test(track.filename) || /mp4|m4a|aac/i.test(track.mime)) return "M4A";
+  return "MP3";
+}
+
 function formatTime(seconds) {
   if (!Number.isFinite(seconds)) return "0:00";
   const minutes = Math.floor(seconds / 60);
@@ -297,7 +302,7 @@ function createTrackRow(track, { onPlay, onOptions, subtitle }) {
   title.textContent = track.title;
   const sub = document.createElement("span");
   sub.className = "track-sub";
-  sub.textContent = subtitle || (formatSize(track.size) + "・オフライン保存済み");
+  sub.textContent = subtitle || (formatSize(track.size) + "・" + trackFormat(track) + "・オフライン保存済み");
   text.append(title, sub);
 
   const bars = document.createElement("span");
@@ -1125,23 +1130,31 @@ window.addEventListener("appinstalled", () => showToast("ホーム画面に追�
 
 /* ---------- 起動 ---------- */
 
+function applyAccessRequirement(required, code) {
+  requiresAccessCode = required;
+  elements.accessPanel.hidden = !required;
+  elements.accessCode.required = required;
+  if (required && !elements.accessCode.value) elements.accessCode.value = code;
+}
+
+async function loadServerConfig(cachedCode) {
+  const code = new URLSearchParams(location.search).get("code") || cachedCode;
+  try {
+    const configResponse = await fetch("/api/config", { cache: "no-store" });
+    const config = await configResponse.json();
+    applyAccessRequirement(Boolean(config.requiresAccessCode), code);
+  } catch (_) {
+    applyAccessRequirement(Boolean(cachedCode), code);
+  }
+}
+
 async function start() {
   updateNetworkStatus();
   restoreFormat();
   const cachedCode = localStorage.getItem("oto-access-code") || "";
-  try {
-    const configResponse = await fetch("/api/config", { cache: "no-store" });
-    const config = await configResponse.json();
-    requiresAccessCode = Boolean(config.requiresAccessCode);
-  } catch (_) {
-    requiresAccessCode = Boolean(cachedCode);
-  }
-  if (requiresAccessCode) {
-    const codeFromUrl = new URLSearchParams(location.search).get("code") || cachedCode;
-    elements.accessCode.value = codeFromUrl;
-    elements.accessPanel.hidden = false;
-    elements.accessCode.required = true;
-  }
+  // サーバーが休止中でもすぐ使えるよう、ライブラリは先に表示し、サーバー設定は後から反映する
+  applyAccessRequirement(Boolean(cachedCode), cachedCode);
+  loadServerConfig(cachedCode);
   await refreshData();
   renderRoute(false);
   if ("serviceWorker" in navigator) {

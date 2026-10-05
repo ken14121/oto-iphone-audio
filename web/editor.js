@@ -56,6 +56,8 @@ export async function openEditor(track, hooks) {
   ui.loading.hidden = false;
   ui.main.hidden = true;
   ui.progress.hidden = true;
+  // 前回の保存中に無効化したボタンが残らないよう、開くたびに戻す
+  ui.save.disabled = false;
   ui.root.classList.add("open");
   ui.root.setAttribute("aria-hidden", "false");
   document.body.classList.add("editor-open");
@@ -112,6 +114,7 @@ export async function openEditor(track, hooks) {
 }
 
 function hideEditorRoot() {
+  ui.save.disabled = false;
   ui.root.classList.remove("open", "playing");
   ui.root.setAttribute("aria-hidden", "true");
   document.body.classList.remove("editor-open");
